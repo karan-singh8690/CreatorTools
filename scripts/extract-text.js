@@ -1,5 +1,6 @@
 // Text extraction script - runs as a separate Node.js process
 // to avoid pdfjs-dist worker issues in Next.js bundled environment
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { getDocument } = require('pdfjs-dist/legacy/build/pdf.mjs')
 const fs = require('fs')
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { readFile } from 'fs/promises'
+import { extractTextFromPdf } from '@/lib/pdf-utils'
 
 export async function GET(
   _request: NextRequest,
@@ -16,8 +18,8 @@ export async function GET(
       )
     }
 
-    // If we already have text content, return it
-    if (file.textContent && file.textContent.trim().length > 0) {
+    // If we already have cached text content, return it
+    if (file.textContent && file.textContent.trim().length > 0 && !file.textContent.startsWith('[PDF')) {
       return NextResponse.json({
         text: file.textContent,
         pages: file.pages,
@@ -25,11 +27,33 @@ export async function GET(
       })
     }
 
-    // Return a placeholder - text extraction requires a separate worker process
-    const textContent = `[PDF document: ${file.name} with ${file.pages} page(s). Text content extraction is available when you chat with this document using the AI assistant.]`
+    // Actually extract text from the PDF file
+    try {
+      const fileBuffer = await readFile(file.filePath)
+      const textContent = await extractTextFromPdf(fileBuffer)
+
+      if (textContent && textContent.trim().length > 0 && !textContent.startsWith('[PDF')) {
+        // Cache the extracted text in the database
+        await db.pdfFile.update({
+          where: { id },
+          data: { textContent },
+        })
+
+        return NextResponse.json({
+          text: textContent,
+          pages: file.pages,
+          cached: false,
+        })
+      }
+    } catch (e) {
+      console.error('Text extraction error:', e)
+    }
+
+    // Fallback: return a message indicating no text could be extracted
+    const fallbackText = `[This PDF document "${file.name}" contains ${file.pages} page(s). Automatic text extraction was unable to retrieve readable text. The document may be image-based or scanned. Try using OCR for better results.]`
 
     return NextResponse.json({
-      text: textContent,
+      text: fallbackText,
       pages: file.pages,
       cached: false,
     })

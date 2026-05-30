@@ -1,38 +1,57 @@
 'use client'
 
 import { useRef, useCallback } from 'react'
-import { useAppStore } from '@/store/app-store'
+import { useAppStore, ViewType } from '@/store/app-store'
 import {
   FolderOpen,
-  FilePlus,
   Clock,
   Star,
-  Folder,
-  Cloud,
+  Combine,
+  FileDown,
+  ArrowRightLeft,
+  ScanLine,
+  Printer,
   FileText,
   ChevronLeft,
   ChevronRight,
   HardDrive,
-  Loader2,
+  Cloud,
+  Wrench,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Progress } from '@/components/ui/progress'
 
-const sidebarItems = [
-  { id: 'open-pdf', label: 'Open PDF', icon: FolderOpen, type: 'button-primary' as const },
-  { id: 'create-pdf', label: 'Create PDF', icon: FilePlus, type: 'button-secondary' as const },
-]
+interface ToolNavItem {
+  id: string
+  label: string
+  icon: React.ElementType
+  view: ViewType
+}
 
 const recentItems = [
-  { id: 'recent-files', label: 'Recent Files', icon: Clock },
-  { id: 'starred-files', label: 'Starred Files', icon: Star },
-  { id: 'recent-folders', label: 'Recent Folders', icon: Folder },
+  { id: 'recent-files', label: 'Recent Files', icon: Clock, view: 'home' as ViewType },
+  { id: 'starred-files', label: 'Starred Files', icon: Star, view: 'home' as ViewType },
 ]
 
-const otherItems = [
-  { id: 'cloud', label: 'PDFelement Cloud', icon: Cloud },
-  { id: 'agreement', label: 'Agreement', icon: FileText },
+const toolItems: ToolNavItem[] = [
+  { id: 'combine-files', label: 'Combine Files', icon: Combine, view: 'combine-files' },
+  { id: 'compress', label: 'Compress PDF', icon: FileDown, view: 'compress' },
+  { id: 'convert', label: 'Convert PDF', icon: ArrowRightLeft, view: 'convert' },
+  { id: 'ocr', label: 'OCR PDF', icon: ScanLine, view: 'ocr' },
+  { id: 'batch-print', label: 'Batch Print', icon: Printer, view: 'batch-print' },
 ]
+
+/** Map currentView to sidebar item id for active highlighting */
+function getActiveToolId(currentView: ViewType): string | null {
+  const mapping: Partial<Record<ViewType, string>> = {
+    'combine-files': 'combine-files',
+    compress: 'compress',
+    convert: 'convert',
+    ocr: 'ocr',
+    'batch-print': 'batch-print',
+  }
+  return mapping[currentView] ?? null
+}
 
 export function AppSidebar() {
   const {
@@ -40,6 +59,7 @@ export function AppSidebar() {
     setSidebarCollapsed,
     activeSidebarItem,
     setActiveSidebarItem,
+    currentView,
     setCurrentView,
     uploadFiles,
     fetchFiles,
@@ -49,14 +69,20 @@ export function AppSidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isUploadingRef = useRef(false)
 
-  const handleItemClick = (id: string, view?: 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print') => {
-    if (id === 'open-pdf') {
-      fileInputRef.current?.click()
-      return
-    }
+  const activeToolId = getActiveToolId(currentView)
+
+  const handleOpenPdf = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleRecentClick = (id: string, view: ViewType) => {
     setActiveSidebarItem(id)
-    if (view) setCurrentView(view)
-    else setCurrentView('home')
+    setCurrentView(view)
+  }
+
+  const handleToolClick = (tool: ToolNavItem) => {
+    setActiveSidebarItem(tool.id)
+    setCurrentView(tool.view)
   }
 
   const handleFileChange = useCallback(
@@ -76,7 +102,6 @@ export function AppSidebar() {
         console.error('Upload error:', error)
       } finally {
         isUploadingRef.current = false
-        // Reset input so the same file can be re-selected
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
         }
@@ -106,7 +131,7 @@ export function AppSidebar() {
 
       {/* Logo */}
       <div className={cn('flex items-center gap-2 px-4 pt-4 pb-2', sidebarCollapsed && 'justify-center px-2')}>
-        {!sidebarCollapsed && (
+        {!sidebarCollapsed ? (
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-[#4A90D9] rounded flex items-center justify-center">
               <FileText className="w-4 h-4 text-white" />
@@ -116,100 +141,120 @@ export function AppSidebar() {
               <span className="text-gray-500 text-[10px] leading-tight">Wondershare</span>
             </div>
           </div>
-        )}
-        {sidebarCollapsed && (
+        ) : (
           <div className="w-7 h-7 bg-[#4A90D9] rounded flex items-center justify-center">
             <FileText className="w-4 h-4 text-white" />
           </div>
         )}
       </div>
 
-      {/* Action Buttons */}
-      <div className={cn('px-3 py-3 space-y-2', sidebarCollapsed && 'px-2')}>
-        {sidebarItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => handleItemClick(item.id)}
-            className={cn(
-              'w-full flex items-center gap-2 rounded-md text-sm font-medium transition-colors',
-              sidebarCollapsed ? 'justify-center px-2 py-2' : 'px-3 py-2',
-              item.type === 'button-primary'
-                ? 'bg-white text-gray-900 hover:bg-gray-100'
-                : 'bg-[#3C3C3C] text-gray-300 hover:bg-[#4A4A4A] border border-gray-600'
-            )}
-          >
-            <item.icon className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && <span>{item.label}</span>}
-          </button>
-        ))}
+      {/* Open PDF Button */}
+      <div className={cn('px-3 pt-3 pb-2', sidebarCollapsed && 'px-2')}>
+        <button
+          onClick={handleOpenPdf}
+          className={cn(
+            'w-full flex items-center gap-2 rounded-lg text-sm font-medium transition-all duration-200',
+            sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5',
+            'bg-white text-gray-900 hover:bg-gray-100 active:scale-[0.98] shadow-sm'
+          )}
+        >
+          <FolderOpen className="w-4 h-4 shrink-0" />
+          {!sidebarCollapsed && <span>Open PDF</span>}
+        </button>
       </div>
 
-      {/* Recent Section */}
-      <div className="px-3 py-2">
+      {/* Separator */}
+      <div className="mx-3 border-t border-gray-700/50" />
+
+      {/* Recent Files Section */}
+      <div className="px-3 py-3">
         {!sidebarCollapsed && (
           <span className="px-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
             Recent Files
           </span>
         )}
-        <div className="mt-1 space-y-0.5">
-          {recentItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleItemClick(item.id, 'home')}
-              className={cn(
-                'w-full flex items-center gap-2 rounded-md text-sm transition-colors',
-                sidebarCollapsed ? 'justify-center px-2 py-2' : 'px-3 py-1.5',
-                activeSidebarItem === item.id
-                  ? 'bg-[#3C3C3C] text-white'
-                  : 'text-gray-400 hover:bg-[#3C3C3C] hover:text-white'
-              )}
-            >
-              <item.icon className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && (
-                <span className="flex-1 text-left">{item.label}</span>
-              )}
-              {!sidebarCollapsed && item.id === 'starred-files' && starredCount > 0 && (
-                <span className="text-[10px] text-gray-500 bg-[#3C3C3C] px-1.5 py-0.5 rounded-full">
-                  {starredCount}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className={cn('mt-1.5 space-y-0.5', !sidebarCollapsed && 'space-y-0.5')}>
+          {recentItems.map((item) => {
+            const isActive = activeSidebarItem === item.id && currentView === 'home'
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleRecentClick(item.id, item.view)}
+                className={cn(
+                  'w-full flex items-center gap-2.5 rounded-lg text-sm transition-all duration-150',
+                  sidebarCollapsed ? 'justify-center px-2 py-2' : 'px-3 py-2',
+                  isActive
+                    ? 'bg-[#3C3C3C] text-white shadow-sm'
+                    : 'text-gray-400 hover:bg-[#353535] hover:text-gray-200'
+                )}
+              >
+                <item.icon className={cn('w-4 h-4 shrink-0', isActive && 'text-[#4A90D9]')} />
+                {!sidebarCollapsed && (
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                )}
+                {!sidebarCollapsed && item.id === 'starred-files' && starredCount > 0 && (
+                  <span className="text-[10px] font-medium text-gray-400 bg-[#3C3C3C] px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                    {starredCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Others Section */}
-      <div className="px-3 py-2">
+      {/* Separator */}
+      <div className="mx-3 border-t border-gray-700/50" />
+
+      {/* Tools Section */}
+      <div className="px-3 py-3">
         {!sidebarCollapsed && (
-          <span className="px-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            Others
-          </span>
+          <div className="flex items-center gap-1.5 px-3 mb-1.5">
+            <Wrench className="w-3 h-3 text-gray-500" />
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              Tools
+            </span>
+          </div>
         )}
-        <div className="mt-1 space-y-0.5">
-          {otherItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleItemClick(item.id)}
-              className={cn(
-                'w-full flex items-center gap-2 rounded-md text-sm transition-colors',
-                sidebarCollapsed ? 'justify-center px-2 py-2' : 'px-3 py-1.5',
-                activeSidebarItem === item.id
-                  ? 'bg-[#3C3C3C] text-white'
-                  : 'text-gray-400 hover:bg-[#3C3C3C] hover:text-white'
-              )}
-            >
-              <item.icon className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span>{item.label}</span>}
-            </button>
-          ))}
+        {sidebarCollapsed && (
+          <div className="flex justify-center mb-1">
+            <Wrench className="w-3.5 h-3.5 text-gray-500" />
+          </div>
+        )}
+        <div className="space-y-0.5">
+          {toolItems.map((tool) => {
+            const isActive = activeToolId === tool.id
+            return (
+              <button
+                key={tool.id}
+                onClick={() => handleToolClick(tool)}
+                title={sidebarCollapsed ? tool.label : undefined}
+                className={cn(
+                  'w-full flex items-center gap-2.5 rounded-lg text-sm transition-all duration-150',
+                  sidebarCollapsed ? 'justify-center px-2 py-2' : 'px-3 py-2',
+                  isActive
+                    ? 'bg-[#4A90D9]/15 text-[#6AADFF] shadow-sm border border-[#4A90D9]/20'
+                    : 'text-gray-400 hover:bg-[#353535] hover:text-gray-200 border border-transparent'
+                )}
+              >
+                <tool.icon className={cn('w-4 h-4 shrink-0', isActive && 'text-[#4A90D9]')} />
+                {!sidebarCollapsed && (
+                  <span className="flex-1 text-left truncate">{tool.label}</span>
+                )}
+                {!sidebarCollapsed && isActive && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#4A90D9]" />
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Cloud Storage */}
-      <div className={cn('px-3 py-3 border-t border-gray-700', sidebarCollapsed && 'px-2')}>
+      {/* Cloud Storage Footer */}
+      <div className={cn('px-3 py-3 border-t border-gray-700/50', sidebarCollapsed && 'px-2')}>
         {!sidebarCollapsed ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
@@ -229,7 +274,8 @@ export function AppSidebar() {
       {/* Collapse Toggle */}
       <button
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        className="flex items-center justify-center py-2 border-t border-gray-700 text-gray-500 hover:text-white hover:bg-[#3C3C3C] transition-colors"
+        className="flex items-center justify-center py-2.5 border-t border-gray-700/50 text-gray-500 hover:text-white hover:bg-[#3C3C3C] transition-all duration-150"
+        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
         {sidebarCollapsed ? (
           <ChevronRight className="w-4 h-4" />

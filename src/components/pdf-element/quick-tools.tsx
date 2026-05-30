@@ -9,12 +9,11 @@ import {
   Combine,
   Layers,
   FileDown,
-  Scan,
-  PenTool,
-  LayoutTemplate,
-  FileText,
+  ChevronRight,
+  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { motion } from 'framer-motion'
 
 interface QuickTool {
   id: string
@@ -23,138 +22,284 @@ interface QuickTool {
   icon: React.ElementType
   color: string
   bgColor: string
+  gradientFrom: string
+  gradientTo: string
+  borderColor: string
   view: ViewType
+  primary?: boolean
 }
 
 const quickTools: QuickTool[] = [
   {
     id: 'edit-pdf',
     label: 'Edit PDF',
-    description: 'Edit text and images in files.',
+    description: 'Edit text and images',
     icon: Pencil,
     color: 'text-orange-600',
     bgColor: 'bg-orange-50',
+    gradientFrom: 'from-orange-500/10',
+    gradientTo: 'to-orange-50/0',
+    borderColor: 'hover:border-orange-300',
     view: 'home',
+    primary: true,
   },
   {
     id: 'convert-pdf',
     label: 'Convert PDF',
-    description: 'Convert PDF to Word, Excel, PPT, etc.',
+    description: 'To Word, Excel, PPT & more',
     icon: ArrowRightLeft,
     color: 'text-teal-600',
     bgColor: 'bg-teal-50',
+    gradientFrom: 'from-teal-500/10',
+    gradientTo: 'to-teal-50/0',
+    borderColor: 'hover:border-teal-300',
     view: 'convert',
+    primary: true,
   },
   {
     id: 'ocr-pdf',
     label: 'OCR PDF',
-    description: 'Convert scanned files to searchable and editable PDF files.',
+    description: 'Make scanned docs searchable',
     icon: ScanLine,
     color: 'text-purple-600',
     bgColor: 'bg-purple-50',
+    gradientFrom: 'from-purple-500/10',
+    gradientTo: 'to-purple-50/0',
+    borderColor: 'hover:border-purple-300',
     view: 'ocr',
+    primary: true,
   },
   {
     id: 'summarize-pdf',
-    label: 'Summarize PDF',
-    description: 'AI summarize your PDF, overview key points, etc.',
+    label: 'AI Chat & Summarize',
+    description: 'AI-powered PDF analysis',
     icon: Sparkles,
     color: 'text-blue-600',
     bgColor: 'bg-blue-50',
+    gradientFrom: 'from-blue-500/10',
+    gradientTo: 'to-blue-50/0',
+    borderColor: 'hover:border-blue-300',
     view: 'pdf-viewer',
+    primary: true,
   },
   {
     id: 'combine-files',
     label: 'Combine Files',
-    description: 'Combine multiple files into a single PDF.',
+    description: 'Merge into a single PDF',
     icon: Combine,
     color: 'text-[#4A90D9]',
     bgColor: 'bg-blue-50',
+    gradientFrom: 'from-sky-500/10',
+    gradientTo: 'to-sky-50/0',
+    borderColor: 'hover:border-sky-300',
     view: 'combine-files',
-  },
-  {
-    id: 'batch-pdfs',
-    label: 'Batch PDFs',
-    description: 'Batch convert, create, print PDF, etc.',
-    icon: Layers,
-    color: 'text-emerald-600',
-    bgColor: 'bg-emerald-50',
-    view: 'batch-print',
+    primary: true,
   },
   {
     id: 'compress-pdf',
     label: 'Compress PDF',
-    description: 'Reduce PDF file size for easier sharing.',
+    description: 'Reduce file size instantly',
     icon: FileDown,
     color: 'text-green-600',
     bgColor: 'bg-green-50',
+    gradientFrom: 'from-green-500/10',
+    gradientTo: 'to-green-50/0',
+    borderColor: 'hover:border-green-300',
     view: 'compress',
+    primary: true,
   },
   {
-    id: 'scan',
-    label: 'Scan',
-    description: 'Scan documents to PDF.',
-    icon: Scan,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    view: 'home',
-  },
-  {
-    id: 'request-esign',
-    label: 'Request eSign',
-    description: 'Request electronic signatures.',
-    icon: PenTool,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-50',
-    view: 'home',
-  },
-  {
-    id: 'template',
-    label: 'Template',
-    description: 'Use templates for PDF creation.',
-    icon: LayoutTemplate,
-    color: 'text-sky-600',
-    bgColor: 'bg-sky-50',
-    view: 'home',
+    id: 'batch-pdfs',
+    label: 'Batch PDFs',
+    description: 'Batch convert, print & more',
+    icon: Layers,
+    color: 'text-emerald-600',
+    bgColor: 'bg-emerald-50',
+    gradientFrom: 'from-emerald-500/10',
+    gradientTo: 'to-emerald-50/0',
+    borderColor: 'hover:border-emerald-300',
+    view: 'batch-print',
   },
 ]
+
+const primaryTools = quickTools.filter((t) => t.primary)
+const secondaryTools = quickTools.filter((t) => !t.primary)
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.06,
+    },
+  },
+}
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0 },
+}
 
 export function QuickTools() {
   const { setCurrentView } = useAppStore()
 
   return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-gray-800">Quick Tools</h2>
-        <button
+    <div className="mb-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center">
+            <Zap className="w-3.5 h-3.5 text-white" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+            Quick Tools
+          </h2>
+        </div>
+        <motion.button
           onClick={() => setCurrentView('all-tools')}
-          className="text-xs text-[#4A90D9] hover:underline flex items-center gap-1"
+          className="text-sm font-medium text-[#4A90D9] hover:text-[#3A7BC8] flex items-center gap-1 group/all transition-colors"
+          whileHover={{ x: 2 }}
+          whileTap={{ scale: 0.97 }}
         >
-          <Layers className="w-3.5 h-3.5" />
           All Tools
-        </button>
+          <ChevronRight className="w-4 h-4 transition-transform group-hover/all:translate-x-0.5" />
+        </motion.button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        {quickTools.map((tool) => (
-          <button
+
+      {/* Primary Tools - Highlighted Row */}
+      <motion.div
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        {primaryTools.map((tool) => (
+          <motion.button
             key={tool.id}
+            variants={cardVariants}
             onClick={() => setCurrentView(tool.view)}
-            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-100 hover:border-[#4A90D9] hover:shadow-sm transition-all text-left group"
+            className={cn(
+              'relative flex flex-col items-center text-center p-4 rounded-xl border border-gray-100 bg-white overflow-hidden group cursor-pointer',
+              tool.borderColor
+            )}
+            whileHover={{
+              scale: 1.04,
+              y: -4,
+              boxShadow: '0 12px 24px -8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.02)',
+            }}
+            whileTap={{ scale: 0.97 }}
+            transition={{
+              type: 'spring',
+              stiffness: 400,
+              damping: 22,
+            }}
           >
-            <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', tool.bgColor)}>
-              <tool.icon className={cn('w-4.5 h-4.5', tool.color)} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-800 group-hover:text-[#4A90D9] truncate">
-                {tool.label}
-              </div>
-              <div className="text-[11px] text-gray-400 line-clamp-2 leading-tight">
-                {tool.description}
-              </div>
-            </div>
-          </button>
+            {/* Gradient accent on top */}
+            <div
+              className={cn(
+                'absolute inset-x-0 top-0 h-1 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-300',
+                tool.gradientFrom.replace('/10', '/80'),
+                tool.gradientTo.replace('/0', '/80')
+              )}
+            />
+
+            {/* Background radial glow on hover */}
+            <div
+              className={cn(
+                'absolute inset-0 bg-gradient-to-b opacity-0 group-hover:opacity-100 transition-opacity duration-500',
+                tool.gradientFrom,
+                tool.gradientTo
+              )}
+            />
+
+            {/* Icon */}
+            <motion.div
+              className={cn(
+                'relative z-10 w-12 h-12 rounded-xl flex items-center justify-center mb-3 shadow-sm',
+                tool.bgColor
+              )}
+              whileHover={{ rotate: [0, -8, 8, -4, 0], scale: 1.1 }}
+              transition={{ duration: 0.4 }}
+            >
+              <tool.icon className={cn('w-5 h-5', tool.color)} />
+            </motion.div>
+
+            {/* Label */}
+            <span className="relative z-10 text-sm font-semibold text-gray-800 group-hover:text-gray-900 leading-tight">
+              {tool.label}
+            </span>
+
+            {/* Description */}
+            <span className="relative z-10 text-[11px] text-gray-400 mt-1 leading-tight line-clamp-2">
+              {tool.description}
+            </span>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
+
+      {/* Secondary Tools - Smaller Cards */}
+      {secondaryTools.length > 0 && (
+        <motion.div
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          {secondaryTools.map((tool) => (
+            <motion.button
+              key={tool.id}
+              variants={cardVariants}
+              onClick={() => setCurrentView(tool.view)}
+              className={cn(
+                'relative flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-100 bg-white overflow-hidden group cursor-pointer',
+                tool.borderColor
+              )}
+              whileHover={{
+                scale: 1.03,
+                y: -2,
+                boxShadow: '0 8px 16px -6px rgba(0,0,0,0.1)',
+              }}
+              whileTap={{ scale: 0.97 }}
+              transition={{
+                type: 'spring',
+                stiffness: 400,
+                damping: 22,
+              }}
+            >
+              {/* Subtle background glow */}
+              <div
+                className={cn(
+                  'absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500',
+                  tool.gradientFrom,
+                  tool.gradientTo
+                )}
+              />
+
+              {/* Icon */}
+              <motion.div
+                className={cn(
+                  'relative z-10 w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                  tool.bgColor
+                )}
+                whileHover={{ scale: 1.1, rotate: [0, -6, 6, 0] }}
+                transition={{ duration: 0.35 }}
+              >
+                <tool.icon className={cn('w-4 h-4', tool.color)} />
+              </motion.div>
+
+              {/* Label & description */}
+              <div className="relative z-10 min-w-0 text-left">
+                <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900 block truncate">
+                  {tool.label}
+                </span>
+                <span className="text-[10px] text-gray-400 leading-tight line-clamp-1">
+                  {tool.description}
+                </span>
+              </div>
+            </motion.button>
+          ))}
+        </motion.div>
+      )}
     </div>
   )
 }
