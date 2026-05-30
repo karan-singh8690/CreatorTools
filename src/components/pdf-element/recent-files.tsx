@@ -58,13 +58,14 @@ export function RecentFiles() {
     toggleStar,
     deleteFile,
     renameFile,
+    fileFilter,
+    setFileFilter,
   } = useAppStore()
 
   const [hoveredFile, setHoveredFile] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<PdfFile | null>(null)
   const [renameTarget, setRenameTarget] = useState<PdfFile | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [sidebarFilter, setSidebarFilter] = useState<'all' | 'starred'>('all')
 
   // Fetch files on mount
   useEffect(() => {
@@ -73,7 +74,7 @@ export function RecentFiles() {
 
   const filteredFiles = recentFiles.filter((file) => {
     const matchesSearch = file.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesFilter = sidebarFilter === 'all' || file.starred
+    const matchesFilter = fileFilter === 'all' || file.starred
     return matchesSearch && matchesFilter
   })
 
@@ -150,10 +151,10 @@ export function RecentFiles() {
       {/* Filter tabs */}
       <div className="flex items-center gap-1 mb-3">
         <button
-          onClick={() => setSidebarFilter('all')}
+          onClick={() => setFileFilter('all')}
           className={cn(
             'px-3 py-1 text-xs rounded-full transition-colors',
-            sidebarFilter === 'all'
+            fileFilter === 'all'
               ? 'bg-gray-800 text-white'
               : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           )}
@@ -161,10 +162,10 @@ export function RecentFiles() {
           All Files
         </button>
         <button
-          onClick={() => setSidebarFilter('starred')}
+          onClick={() => setFileFilter('starred')}
           className={cn(
             'px-3 py-1 text-xs rounded-full transition-colors',
-            sidebarFilter === 'starred'
+            fileFilter === 'starred'
               ? 'bg-gray-800 text-white'
               : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           )}

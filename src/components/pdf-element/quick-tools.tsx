@@ -11,6 +11,9 @@ import {
   FileDown,
   ChevronRight,
   Zap,
+  Scan,
+  PenTool,
+  LayoutTemplate,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
@@ -40,7 +43,7 @@ const quickTools: QuickTool[] = [
     gradientFrom: 'from-orange-500/10',
     gradientTo: 'to-orange-50/0',
     borderColor: 'hover:border-orange-300',
-    view: 'home',
+    view: 'pdf-viewer',
     primary: true,
   },
   {
@@ -119,6 +122,42 @@ const quickTools: QuickTool[] = [
     gradientTo: 'to-emerald-50/0',
     borderColor: 'hover:border-emerald-300',
     view: 'batch-print',
+  },
+  {
+    id: 'scan-to-pdf',
+    label: 'Scan to PDF',
+    description: 'Digitize paper documents',
+    icon: Scan,
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50',
+    gradientFrom: 'from-blue-500/10',
+    gradientTo: 'to-blue-50/0',
+    borderColor: 'hover:border-blue-300',
+    view: 'home',
+  },
+  {
+    id: 'request-esign',
+    label: 'Request eSign',
+    description: 'Send for e-signatures',
+    icon: PenTool,
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-50',
+    gradientFrom: 'from-purple-500/10',
+    gradientTo: 'to-purple-50/0',
+    borderColor: 'hover:border-purple-300',
+    view: 'home',
+  },
+  {
+    id: 'templates',
+    label: 'Templates',
+    description: 'Ready-made PDF templates',
+    icon: LayoutTemplate,
+    color: 'text-sky-600',
+    bgColor: 'bg-sky-50',
+    gradientFrom: 'from-sky-500/10',
+    gradientTo: 'to-sky-50/0',
+    borderColor: 'hover:border-sky-300',
+    view: 'home',
   },
 ]
 
@@ -240,7 +279,7 @@ export function QuickTools() {
       {/* Secondary Tools - Smaller Cards */}
       {secondaryTools.length > 0 && (
         <motion.div
-          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2"
           variants={containerVariants}
           initial="hidden"
           animate="visible"

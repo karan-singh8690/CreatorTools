@@ -64,6 +64,7 @@ export function AppSidebar() {
     uploadFiles,
     fetchFiles,
     recentFiles,
+    setFileFilter,
   } = useAppStore()
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -78,6 +79,12 @@ export function AppSidebar() {
   const handleRecentClick = (id: string, view: ViewType) => {
     setActiveSidebarItem(id)
     setCurrentView(view)
+    // Set file filter based on which item was clicked
+    if (id === 'starred-files') {
+      setFileFilter('starred')
+    } else {
+      setFileFilter('all')
+    }
   }
 
   const handleToolClick = (tool: ToolNavItem) => {

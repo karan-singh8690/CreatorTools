@@ -71,13 +71,30 @@ export function CompressPdf() {
 
   const handleDownload = useCallback(() => {
     if (!result) return
-    // Trigger download of the compressed file
-    const a = document.createElement('a')
-    a.href = `/api/files/${result.file.id}/download`
-    a.download = result.file.name
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    // Trigger download of the compressed file using fetch + blob
+    fetch(`/api/files/${result.file.id}/download?download=1`)
+      .then((response) => {
+        if (!response.ok) throw new Error('Download failed')
+        return response.blob()
+      })
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = result.file.name
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      })
+      .catch((err) => {
+        console.error('Download error:', err)
+        toast({
+          title: 'Download Failed',
+          description: 'Failed to download the compressed file',
+          variant: 'destructive',
+        })
+      })
 
     toast({
       title: 'Download Started',
@@ -292,8 +309,11 @@ export function CompressPdf() {
                     <p className="text-sm font-medium text-gray-700">Compressing PDF...</p>
                     <p className="text-xs text-gray-400 mt-1">Optimizing {selectedFile.name}</p>
                     <div className="w-48 mt-4">
-                      <Progress value={45} className="h-1.5" />
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-green-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+                      </div>
                     </div>
+                    <p className="text-[10px] text-gray-400 mt-2">This may take a moment...</p>
                   </CardContent>
                 </Card>
               )}

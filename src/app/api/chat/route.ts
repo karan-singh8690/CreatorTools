@@ -1,37 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { readFile } from 'fs/promises'
-
-/**
- * Simple text extraction that looks for text between BT and ET markers in PDF
- */
-function simpleTextExtraction(buffer: Buffer): string {
-  const text = buffer.toString('latin1')
-  const textParts: string[] = []
-  const btEtRegex = /BT\s*([\s\S]*?)\s*ET/g
-  let match
-
-  while ((match = btEtRegex.exec(text)) !== null) {
-    const block = match[1]
-    const tjRegex = /\(([^)]*)\)\s*Tj/g
-    let tjMatch
-    while ((tjMatch = tjRegex.exec(block)) !== null) {
-      if (tjMatch[1].trim()) textParts.push(tjMatch[1])
-    }
-    const tjArrayRegex = /\[(.*?)\]\s*TJ/g
-    let tjArrayMatch
-    while ((tjArrayMatch = tjArrayRegex.exec(block)) !== null) {
-      const items = tjArrayMatch[1]
-      const stringRegex = /\(([^)]*)\)/g
-      let strMatch
-      while ((strMatch = stringRegex.exec(items)) !== null) {
-        if (strMatch[1].trim()) textParts.push(strMatch[1])
-      }
-    }
-  }
-
-  return textParts.join(' ').trim()
-}
+import { extractTextFromPdf } from '@/lib/pdf-utils'
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,13 +29,14 @@ export async function POST(request: NextRequest) {
         pdfPageCount = pdfFile.pages
         pdfTextContent = pdfFile.textContent
 
-        // If no text content cached, try simple extraction
+        // If no text content cached or it's a placeholder, extract using pdfjs-dist
         if (!pdfTextContent || pdfTextContent.startsWith('[PDF')) {
           try {
             const buffer = await readFile(pdfFile.filePath)
-            const extracted = simpleTextExtraction(buffer)
-            if (extracted && extracted.trim().length > 0) {
+            const extracted = await extractTextFromPdf(buffer)
+            if (extracted && extracted.trim().length > 0 && !extracted.startsWith('[PDF')) {
               pdfTextContent = extracted
+              // Cache the extracted text
               await db.pdfFile.update({
                 where: { id: fileId },
                 data: { textContent: extracted },

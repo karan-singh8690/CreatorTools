@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { writeFile, mkdir } from 'fs/promises'
+import { getPageCount } from '@/lib/pdf-utils'
 import path from 'path'
 import { randomUUID } from 'crypto'
 
@@ -52,16 +53,22 @@ export async function POST(request: NextRequest) {
     const fileBuffer = Buffer.from(await file.arrayBuffer())
     await writeFile(filePath, fileBuffer)
 
-    // Simple page count - count /Type /Page entries
+    // Get accurate page count using pdf-lib
     let pages = 1
     try {
-      const text = fileBuffer.toString('utf-8', 0, Math.min(fileBuffer.length, 100000))
-      const pageMatches = text.match(/\/Type\s*\/Page(?!s)/g)
-      if (pageMatches && pageMatches.length > 0) {
-        pages = pageMatches.length
+      pages = await getPageCount(fileBuffer)
+    } catch (e) {
+      console.error('Page count error:', e)
+      // Fallback: try regex count
+      try {
+        const text = fileBuffer.toString('utf-8', 0, Math.min(fileBuffer.length, 100000))
+        const pageMatches = text.match(/\/Type\s*\/Page(?!s)/g)
+        if (pageMatches && pageMatches.length > 0) {
+          pages = pageMatches.length
+        }
+      } catch {
+        // Keep default of 1
       }
-    } catch {
-      // ignore
     }
 
     // Save to database - text content will be extracted on demand

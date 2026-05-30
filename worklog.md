@@ -120,3 +120,52 @@ Stage Summary:
 - All lint checks pass
 - Dev server compiles successfully
 - All features working end-to-end
+
+---
+Task ID: 1
+Agent: QuickTools Fix Agent
+Task: Fix QuickTools component navigation, primary/secondary split, and add missing tools
+
+Work Log:
+- Fixed "Edit PDF" tool navigation from `view: 'home'` to `view: 'pdf-viewer'` since editing/viewing is the closest match
+- Verified primary/secondary split: first 6 tools marked `primary: true`, "Batch PDFs" and new tools are secondary (no `primary` field)
+- Added 3 new secondary tools: "Scan to PDF" (Scan icon, blue), "Request eSign" (PenTool icon, purple), "Templates" (LayoutTemplate icon, sky)
+- Imported Scan, PenTool, LayoutTemplate icons from lucide-react
+- New tools navigate to `view: 'home'` (handled by coming-soon toast on home page)
+- Updated secondary tools grid to `lg:grid-cols-4` to accommodate 4 secondary tools
+- All lint checks pass
+
+Stage Summary:
+- Edit PDF now correctly navigates to pdf-viewer
+- 6 primary + 4 secondary tools (was 6+1)
+- Added Scan to PDF, Request eSign, Templates as secondary tools
+- Lint clean, no errors
+
+---
+Task ID: 2
+Agent: ComingSoon Agent
+Task: Fix AllTools component and add Coming Soon mechanism for unimplemented tools
+
+Work Log:
+- Created ComingSoonDialog component (src/components/pdf-element/coming-soon.tsx)
+  - Uses shadcn Dialog with HardHat construction icon in amber color scheme
+  - Shows tool name, "Coming Soon" title, and description
+  - Dashed amber info box with call-to-action message
+  - "Notify Me" button triggers sonner toast success notification and closes dialog
+  - "Close" button dismisses the dialog
+- Updated AllTools component (src/components/pdf-element/all-tools.tsx)
+  - Added `comingSoon?: boolean` field to ToolItem interface
+  - Marked 12 unimplemented tools with `comingSoon: true` (Edit, Create, Watermark, Background, Header & Footer, Bates Number, Security, Extract Data, Translate, Delete Blank Pages, Sign, Crop)
+  - 4 implemented tools remain without comingSoon: Convert, OCR, Compress, Print
+  - clicking a comingSoon tool opens ComingSoonDialog instead of navigating
+  - clicking an implemented tool still calls setCurrentView(tool.view)
+  - Coming soon tools show amber color scheme (icon bg, icon color, hover border)
+  - Added "Soon" badge alongside existing "New" badges for coming soon tools
+  - Managed dialog state with useState<ToolItem | null>
+- Lint passes cleanly, dev server compiles successfully
+
+Stage Summary:
+- AllTools now differentiates between implemented and unimplemented tools
+- 12 dead-link tools now show Coming Soon dialog instead of navigating to home
+- Consistent amber visual treatment for coming soon tools in the grid
+- ComingSoonDialog reusable component with notify-me toast feedback

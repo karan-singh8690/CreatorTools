@@ -124,6 +124,10 @@ interface AppState {
   // View mode
   viewMode: 'list' | 'grid'
   setViewMode: (mode: 'list' | 'grid') => void
+
+  // File filter
+  fileFilter: 'all' | 'starred'
+  setFileFilter: (filter: 'all' | 'starred') => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -417,4 +421,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // View mode
   viewMode: 'list',
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  // File filter
+  fileFilter: 'all',
+  setFileFilter: (filter) => set({ fileFilter: filter }),
 }))
