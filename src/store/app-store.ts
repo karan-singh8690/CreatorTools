@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress'
+export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress' | 'qr-generator'
 
 export interface PdfFile {
   id: string

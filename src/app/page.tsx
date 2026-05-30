@@ -12,6 +12,7 @@ import { FileUpload } from '@/components/pdf-element/file-upload'
 import { ConvertPdf } from '@/components/pdf-element/convert-pdf'
 import { CompressPdf } from '@/components/pdf-element/compress-pdf'
 import { OcrPdf } from '@/components/pdf-element/ocr-pdf'
+import { QrGenerator } from '@/components/qr-generator/qr-generator'
 import { motion } from 'framer-motion'
 import { FileText, Sparkles } from 'lucide-react'
 
@@ -161,6 +162,8 @@ export default function Home() {
         return <OcrPdf />
       case 'compress':
         return <CompressPdf />
+      case 'qr-generator':
+        return <QrGenerator />
       default:
         return <HomeView />
     }

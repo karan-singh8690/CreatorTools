@@ -17,6 +17,7 @@ import {
   HardDrive,
   Cloud,
   Wrench,
+  QrCode,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Progress } from '@/components/ui/progress'
@@ -39,6 +40,7 @@ const toolItems: ToolNavItem[] = [
   { id: 'convert', label: 'Convert PDF', icon: ArrowRightLeft, view: 'convert' },
   { id: 'ocr', label: 'OCR PDF', icon: ScanLine, view: 'ocr' },
   { id: 'batch-print', label: 'Batch Print', icon: Printer, view: 'batch-print' },
+  { id: 'qr-generator', label: 'QR Generator', icon: QrCode, view: 'qr-generator' },
 ]
 
 /** Map currentView to sidebar item id for active highlighting */
@@ -49,6 +51,7 @@ function getActiveToolId(currentView: ViewType): string | null {
     convert: 'convert',
     ocr: 'ocr',
     'batch-print': 'batch-print',
+    'qr-generator': 'qr-generator',
   }
   return mapping[currentView] ?? null
 }

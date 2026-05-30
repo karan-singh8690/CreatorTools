@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  serverExternalPackages: ['pdf-lib', 'pdfjs-dist'],
+  serverExternalPackages: ['pdf-lib', 'pdfjs-dist', 'qrcode', 'qrcode-generator'],
   turbopack: {},
 };
 
