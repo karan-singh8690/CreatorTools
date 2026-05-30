@@ -1,9 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { readFile } from 'fs/promises'
+
+/**
+ * Simple text extraction that looks for text between BT and ET markers in PDF
+ */
+function simpleTextExtraction(buffer: Buffer): string {
+  const text = buffer.toString('latin1')
+  const textParts: string[] = []
+  const btEtRegex = /BT\s*([\s\S]*?)\s*ET/g
+  let match
+
+  while ((match = btEtRegex.exec(text)) !== null) {
+    const block = match[1]
+    const tjRegex = /\(([^)]*)\)\s*Tj/g
+    let tjMatch
+    while ((tjMatch = tjRegex.exec(block)) !== null) {
+      if (tjMatch[1].trim()) textParts.push(tjMatch[1])
+    }
+    const tjArrayRegex = /\[(.*?)\]\s*TJ/g
+    let tjArrayMatch
+    while ((tjArrayMatch = tjArrayRegex.exec(block)) !== null) {
+      const items = tjArrayMatch[1]
+      const stringRegex = /\(([^)]*)\)/g
+      let strMatch
+      while ((strMatch = stringRegex.exec(items)) !== null) {
+        if (strMatch[1].trim()) textParts.push(strMatch[1])
+      }
+    }
+  }
+
+  return textParts.join(' ').trim()
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { message, fileName, history } = body
+    const { message, fileName, fileId, history } = body
 
     if (!message) {
       return NextResponse.json(
@@ -12,12 +45,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Fetch PDF text content if fileId is provided
+    let pdfTextContent: string | null = null
+    let pdfFileName = fileName || 'document.pdf'
+    let pdfPageCount = 0
+
+    if (fileId) {
+      const pdfFile = await db.pdfFile.findUnique({
+        where: { id: fileId },
+      })
+      if (pdfFile) {
+        pdfFileName = pdfFile.name
+        pdfPageCount = pdfFile.pages
+        pdfTextContent = pdfFile.textContent
+
+        // If no text content cached, try simple extraction
+        if (!pdfTextContent || pdfTextContent.startsWith('[PDF')) {
+          try {
+            const buffer = await readFile(pdfFile.filePath)
+            const extracted = simpleTextExtraction(buffer)
+            if (extracted && extracted.trim().length > 0) {
+              pdfTextContent = extracted
+              await db.pdfFile.update({
+                where: { id: fileId },
+                data: { textContent: extracted },
+              })
+            }
+          } catch (e) {
+            console.error('Chat text extraction error:', e)
+          }
+        }
+      }
+    }
+
     // Use z-ai-web-dev-sdk for LLM chat
     const ZAI = (await import('z-ai-web-dev-sdk')).default
     const zai = await ZAI.create()
 
-    // Build conversation messages
-    const systemPrompt = `You are Luna, an AI assistant for PDFelement. You help users understand and work with PDF documents. You are currently helping the user with a file named "${fileName || 'document.pdf'}". Be helpful, concise, and professional. If the user asks about the PDF content, provide relevant insights about typical document structures and content analysis capabilities. You can help with:
+    // Build the system prompt with PDF context
+    let systemPrompt = `You are Luna, an AI assistant for PDFelement. You help users understand and work with PDF documents. You are currently helping the user with a file named "${pdfFileName}"${pdfPageCount > 0 ? ` (${pdfPageCount} pages)` : ''}.
+
+Be helpful, concise, and professional. You can help with:
 - Summarizing PDF content
 - Answering questions about the document
 - Suggesting PDF operations
@@ -25,6 +93,19 @@ export async function POST(request: NextRequest) {
 
 Keep your responses concise and helpful.`
 
+    // If we have PDF text content, include it in the context
+    if (pdfTextContent && pdfTextContent.trim().length > 0 && !pdfTextContent.startsWith('[PDF')) {
+      const maxTextLength = 50000
+      const truncatedText = pdfTextContent.length > maxTextLength
+        ? pdfTextContent.substring(0, maxTextLength) + '\n\n[... Content truncated due to length ...]'
+        : pdfTextContent
+
+      systemPrompt += `\n\nHere is the text content extracted from the PDF file "${pdfFileName}":\n\n${truncatedText}\n\nUse this content to answer the user's questions about the document.`
+    } else if (fileId) {
+      systemPrompt += `\n\nNote: No text content could be automatically extracted from this PDF. It may be a scanned document or contain only images. Let the user know that text extraction was not possible and suggest using OCR.`
+    }
+
+    // Build conversation messages
     const messages = [
       {
         role: 'assistant' as const,

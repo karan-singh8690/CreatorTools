@@ -1,6 +1,6 @@
 'use client'
 
-import { useAppStore } from '@/store/app-store'
+import { useAppStore, formatFileSize } from '@/store/app-store'
 import {
   Plus,
   Trash2,
@@ -88,7 +88,7 @@ export function BatchPrint() {
                     <FileText className="w-4 h-4 text-[#4A90D9] shrink-0" />
                     <span className="text-sm text-gray-800 truncate">{file.name}</span>
                   </div>
-                  <div className="text-xs text-gray-500">{file.size}</div>
+                  <div className="text-xs text-gray-500">{formatFileSize(file.size)}</div>
                   <div className="text-xs text-gray-400">Ready</div>
                   <button
                     onClick={() => removePrintFile(file.id)}
@@ -133,7 +133,7 @@ export function BatchPrint() {
                     <FileText className="w-4 h-4 text-[#4A90D9] shrink-0" />
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-gray-700 truncate">{file.name}</div>
-                      <div className="text-[10px] text-gray-400">{file.size}</div>
+                      <div className="text-[10px] text-gray-400">{formatFileSize(file.size)}</div>
                     </div>
                   </button>
                 ))}

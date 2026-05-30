@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef, useCallback } from 'react'
 import { useAppStore } from '@/store/app-store'
 import {
   FolderOpen,
@@ -12,13 +13,14 @@ import {
   ChevronLeft,
   ChevronRight,
   HardDrive,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Progress } from '@/components/ui/progress'
 
 const sidebarItems = [
-  { id: 'open-pdf', label: 'Open PDF', icon: FolderOpen, action: 'home' as const, type: 'button-primary' as const },
-  { id: 'create-pdf', label: 'Create PDF', icon: FilePlus, action: 'home' as const, type: 'button-secondary' as const },
+  { id: 'open-pdf', label: 'Open PDF', icon: FolderOpen, type: 'button-primary' as const },
+  { id: 'create-pdf', label: 'Create PDF', icon: FilePlus, type: 'button-secondary' as const },
 ]
 
 const recentItems = [
@@ -39,13 +41,51 @@ export function AppSidebar() {
     activeSidebarItem,
     setActiveSidebarItem,
     setCurrentView,
+    uploadFiles,
+    fetchFiles,
+    recentFiles,
   } = useAppStore()
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const isUploadingRef = useRef(false)
+
   const handleItemClick = (id: string, view?: 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print') => {
+    if (id === 'open-pdf') {
+      fileInputRef.current?.click()
+      return
+    }
     setActiveSidebarItem(id)
     if (view) setCurrentView(view)
     else setCurrentView('home')
   }
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const fileList = e.target.files
+      if (!fileList || fileList.length === 0 || isUploadingRef.current) return
+
+      isUploadingRef.current = true
+      const files = Array.from(fileList)
+
+      try {
+        await uploadFiles(files)
+        await fetchFiles()
+        setActiveSidebarItem('recent-files')
+        setCurrentView('home')
+      } catch (error) {
+        console.error('Upload error:', error)
+      } finally {
+        isUploadingRef.current = false
+        // Reset input so the same file can be re-selected
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+      }
+    },
+    [uploadFiles, fetchFiles, setActiveSidebarItem, setCurrentView]
+  )
+
+  const starredCount = recentFiles.filter((f) => f.starred).length
 
   return (
     <div
@@ -54,6 +94,16 @@ export function AppSidebar() {
         sidebarCollapsed ? 'w-16' : 'w-56'
       )}
     >
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        multiple
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       {/* Logo */}
       <div className={cn('flex items-center gap-2 px-4 pt-4 pb-2', sidebarCollapsed && 'justify-center px-2')}>
         {!sidebarCollapsed && (
@@ -79,7 +129,7 @@ export function AppSidebar() {
         {sidebarItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => handleItemClick(item.id, item.action)}
+            onClick={() => handleItemClick(item.id)}
             className={cn(
               'w-full flex items-center gap-2 rounded-md text-sm font-medium transition-colors',
               sidebarCollapsed ? 'justify-center px-2 py-2' : 'px-3 py-2',
@@ -115,7 +165,14 @@ export function AppSidebar() {
               )}
             >
               <item.icon className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span>{item.label}</span>}
+              {!sidebarCollapsed && (
+                <span className="flex-1 text-left">{item.label}</span>
+              )}
+              {!sidebarCollapsed && item.id === 'starred-files' && starredCount > 0 && (
+                <span className="text-[10px] text-gray-500 bg-[#3C3C3C] px-1.5 py-0.5 rounded-full">
+                  {starredCount}
+                </span>
+              )}
             </button>
           ))}
         </div>

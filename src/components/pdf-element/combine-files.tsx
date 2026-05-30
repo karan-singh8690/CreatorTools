@@ -1,12 +1,13 @@
 'use client'
 
-import { useAppStore } from '@/store/app-store'
+import { useAppStore, formatFileSize, formatDate } from '@/store/app-store'
 import {
   Plus,
   Trash2,
   FolderOpen,
   X,
   FileText,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -15,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
+import { useToast } from '@/hooks/use-toast'
 
 export function CombineFiles() {
   const {
@@ -22,12 +24,33 @@ export function CombineFiles() {
     combineFiles,
     addCombineFile,
     removeCombineFile,
+    combineSelectedFiles,
+    isCombining,
     setCurrentView,
   } = useAppStore()
+
+  const { toast } = useToast()
 
   const availableFiles = recentFiles.filter(
     (f) => !combineFiles.find((cf) => cf.id === f.id)
   )
+
+  const handleCombine = async () => {
+    const result = await combineSelectedFiles()
+    if (result) {
+      toast({
+        title: 'Files Combined',
+        description: `Successfully created ${result.name}`,
+      })
+      setCurrentView('home')
+    } else if (combineFiles.length >= 2) {
+      toast({
+        title: 'Combine Failed',
+        description: 'Failed to combine files. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -95,7 +118,7 @@ export function CombineFiles() {
                   </div>
                   <div className="text-xs text-gray-500">{file.pages}</div>
                   <div className="text-xs text-gray-500">All</div>
-                  <div className="text-xs text-gray-400">{file.modifiedTime}</div>
+                  <div className="text-xs text-gray-400">{formatDate(file.updatedAt)}</div>
                   <button
                     onClick={() => removeCombineFile(file.id)}
                     className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
@@ -139,7 +162,7 @@ export function CombineFiles() {
                     <FileText className="w-4 h-4 text-[#4A90D9] shrink-0" />
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-gray-700 truncate">{file.name}</div>
-                      <div className="text-[10px] text-gray-400">{file.size}</div>
+                      <div className="text-[10px] text-gray-400">{formatFileSize(file.size)}</div>
                     </div>
                   </button>
                 ))}
@@ -225,9 +248,17 @@ export function CombineFiles() {
               </Button>
               <Button
                 className="w-full h-9 text-xs bg-[#4A90D9] hover:bg-[#3A7BC8]"
-                disabled={combineFiles.length === 0}
+                disabled={combineFiles.length < 2 || isCombining}
+                onClick={handleCombine}
               >
-                Apply
+                {isCombining ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    Combining...
+                  </>
+                ) : (
+                  'Apply'
+                )}
               </Button>
             </div>
           </div>

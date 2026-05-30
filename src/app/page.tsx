@@ -8,6 +8,10 @@ import { AllTools } from '@/components/pdf-element/all-tools'
 import { PdfViewer } from '@/components/pdf-element/pdf-viewer'
 import { CombineFiles } from '@/components/pdf-element/combine-files'
 import { BatchPrint } from '@/components/pdf-element/batch-print'
+import { FileUpload } from '@/components/pdf-element/file-upload'
+import { ConvertPdf } from '@/components/pdf-element/convert-pdf'
+import { CompressPdf } from '@/components/pdf-element/compress-pdf'
+import { OcrPdf } from '@/components/pdf-element/ocr-pdf'
 
 export default function Home() {
   const { currentView } = useAppStore()
@@ -18,6 +22,7 @@ export default function Home() {
         return (
           <div className="flex-1 overflow-auto p-6">
             <QuickTools />
+            <FileUpload mode="full" className="mb-6" />
             <RecentFiles />
           </div>
         )
@@ -30,13 +35,16 @@ export default function Home() {
       case 'batch-print':
         return <BatchPrint />
       case 'convert':
+        return <ConvertPdf />
       case 'ocr':
+        return <OcrPdf />
       case 'compress':
-        return <FeaturePlaceholder />
+        return <CompressPdf />
       default:
         return (
           <div className="flex-1 overflow-auto p-6">
             <QuickTools />
+            <FileUpload mode="full" className="mb-6" />
             <RecentFiles />
           </div>
         )
@@ -49,46 +57,6 @@ export default function Home() {
       <main className="flex-1 flex min-w-0">
         {renderMainContent()}
       </main>
-    </div>
-  )
-}
-
-function FeaturePlaceholder() {
-  const { setCurrentView } = useAppStore()
-  const view = useAppStore((s) => s.currentView)
-
-  const featureInfo: Record<string, { title: string; description: string }> = {
-    convert: {
-      title: 'Convert PDF',
-      description: 'Convert PDF files to Word, Excel, PPT, images, and other formats with high accuracy.',
-    },
-    ocr: {
-      title: 'OCR PDF',
-      description: 'Convert scanned documents and images into searchable and editable PDF files using advanced OCR technology.',
-    },
-    compress: {
-      title: 'Compress PDF',
-      description: 'Reduce PDF file size while maintaining quality for easier sharing and storage.',
-    },
-  }
-
-  const info = featureInfo[view] || { title: 'Feature', description: 'Coming soon.' }
-
-  return (
-    <div className="flex-1 flex items-center justify-center p-6">
-      <div className="text-center max-w-md">
-        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <span className="text-2xl">📄</span>
-        </div>
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">{info.title}</h2>
-        <p className="text-sm text-gray-500 mb-6">{info.description}</p>
-        <button
-          onClick={() => setCurrentView('home')}
-          className="text-sm text-[#4A90D9] hover:underline"
-        >
-          ← Back to Home
-        </button>
-      </div>
     </div>
   )
 }

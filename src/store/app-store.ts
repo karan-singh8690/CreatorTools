@@ -2,13 +2,18 @@ import { create } from 'zustand'
 
 export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress'
 
-export interface PDFFile {
+export interface PdfFile {
   id: string
   name: string
-  size: string
-  modifiedTime: string
+  originalName: string
+  size: number
+  mimeType: string
   pages: number
   starred: boolean
+  textContent: string | null
+  filePath: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ChatMessage {
@@ -16,6 +21,47 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+}
+
+export interface UploadProgress {
+  fileName: string
+  progress: number
+  status: 'uploading' | 'success' | 'error'
+  error?: string
+}
+
+// Keep backward-compatible alias
+export type PDFFile = PdfFile
+
+/** Format byte size to human-readable string */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+/** Format date string to human-readable relative/absolute time */
+export function formatDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) {
+    const hours = date.getHours()
+    const minutes = date.getMinutes().toString().padStart(2, '0')
+    const ampm = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours % 12 || 12
+    return `Today, ${displayHours}:${minutes} ${ampm}`
+  } else if (diffDays === 1) {
+    return 'Yesterday'
+  } else if (diffDays < 7) {
+    return date.toLocaleDateString('en-US', { weekday: 'short' })
+  } else {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
 }
 
 interface AppState {
@@ -30,13 +76,19 @@ interface AppState {
   setActiveSidebarItem: (item: string) => void
 
   // Files
-  recentFiles: PDFFile[]
+  recentFiles: PdfFile[]
+  isLoadingFiles: boolean
+  fetchFiles: (search?: string) => Promise<void>
+  uploadFiles: (files: File[], onProgress?: (progresses: UploadProgress[]) => void) => Promise<PdfFile[]>
+  toggleStar: (id: string) => Promise<void>
+  deleteFile: (id: string) => Promise<void>
+  renameFile: (id: string, name: string) => Promise<void>
   selectedFiles: string[]
   toggleFileSelection: (id: string) => void
 
   // PDF Viewer
-  selectedPdfFile: PDFFile | null
-  setSelectedPdfFile: (file: PDFFile | null) => void
+  selectedPdfFile: PdfFile | null
+  setSelectedPdfFile: (file: PdfFile | null) => void
   pdfPage: number
   setPdfPage: (page: number) => void
   pdfTotalPages: number
@@ -50,14 +102,20 @@ interface AppState {
   setIsChatLoading: (loading: boolean) => void
 
   // Combine Files
-  combineFiles: PDFFile[]
-  addCombineFile: (file: PDFFile) => void
+  combineFiles: PdfFile[]
+  addCombineFile: (file: PdfFile) => void
   removeCombineFile: (id: string) => void
+  combineSelectedFiles: () => Promise<PdfFile | null>
+  isCombining: boolean
 
   // Batch Print
-  printFiles: PDFFile[]
-  addPrintFile: (file: PDFFile) => void
+  printFiles: PdfFile[]
+  addPrintFile: (file: PdfFile) => void
   removePrintFile: (id: string) => void
+
+  // Compress
+  compressFile: (id: string) => Promise<{ file: PdfFile; compression: { originalSize: number; compressedSize: number; savedBytes: number; savedPercent: string } } | null>
+  isCompressing: boolean
 
   // Search
   searchQuery: string
@@ -68,18 +126,7 @@ interface AppState {
   setViewMode: (mode: 'list' | 'grid') => void
 }
 
-const sampleFiles: PDFFile[] = [
-  { id: '1', name: 'education.pdf', size: '3.6 MB', modifiedTime: 'Today, 12:45', pages: 12, starred: true },
-  { id: '2', name: 'communication.pdf', size: '4.1 MB', modifiedTime: 'Today, 12:45', pages: 8, starred: false },
-  { id: '3', name: 'marketing.pdf', size: '3.8 MB', modifiedTime: 'Today, 13:45', pages: 15, starred: false },
-  { id: '4', name: 'User Guide Book.pdf', size: '4.5 MB', modifiedTime: 'Sep 4', pages: 24, starred: true },
-  { id: '5', name: 'annual-report-2024.pdf', size: '2.8 MB', modifiedTime: 'Sep 3', pages: 42, starred: false },
-  { id: '6', name: 'project-proposal.pdf', size: '1.6 MB', modifiedTime: 'Sep 2', pages: 6, starred: false },
-  { id: '7', name: 'client-contact.pdf', size: '500.6 KB', modifiedTime: 'Sep 1', pages: 2, starred: false },
-  { id: '8', name: 'clinical-laboratory.pdf', size: '5.2 MB', modifiedTime: 'Aug 30', pages: 18, starred: false },
-]
-
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   // Navigation
   currentView: 'home',
   setCurrentView: (view) => set({ currentView: view }),
@@ -91,7 +138,165 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveSidebarItem: (item) => set({ activeSidebarItem: item }),
 
   // Files
-  recentFiles: sampleFiles,
+  recentFiles: [],
+  isLoadingFiles: false,
+  fetchFiles: async (search?: string) => {
+    set({ isLoadingFiles: true })
+    try {
+      const params = new URLSearchParams()
+      if (search) params.set('search', search)
+      const response = await fetch(`/api/files?${params.toString()}`)
+      if (!response.ok) throw new Error('Failed to fetch files')
+      const data = await response.json()
+      set({ recentFiles: data.files || [] })
+    } catch (error) {
+      console.error('Fetch files error:', error)
+    } finally {
+      set({ isLoadingFiles: false })
+    }
+  },
+  uploadFiles: async (files: File[], onProgress?: (progresses: UploadProgress[]) => void) => {
+    const progresses: UploadProgress[] = files.map((f) => ({
+      fileName: f.name,
+      progress: 0,
+      status: 'uploading' as const,
+    }))
+    onProgress?.(progresses)
+
+    const uploadedFiles: PdfFile[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      try {
+        // Simulate progress
+        progresses[i] = { ...progresses[i], progress: 30 }
+        onProgress?.([...progresses])
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch('/api/files', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Upload failed' }))
+          throw new Error(errorData.error || 'Upload failed')
+        }
+
+        const data = await response.json()
+        uploadedFiles.push(data.file)
+
+        progresses[i] = { ...progresses[i], progress: 100, status: 'success' }
+        onProgress?.([...progresses])
+      } catch (error) {
+        progresses[i] = {
+          ...progresses[i],
+          progress: 100,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Upload failed',
+        }
+        onProgress?.([...progresses])
+      }
+    }
+
+    // Refresh file list after upload
+    if (uploadedFiles.length > 0) {
+      await get().fetchFiles()
+    }
+
+    return uploadedFiles
+  },
+  toggleStar: async (id: string) => {
+    const file = get().recentFiles.find((f) => f.id === id)
+    if (!file) return
+
+    // Optimistic update
+    set({
+      recentFiles: get().recentFiles.map((f) =>
+        f.id === id ? { ...f, starred: !f.starred } : f
+      ),
+    })
+
+    try {
+      const response = await fetch(`/api/files/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ starred: !file.starred }),
+      })
+
+      if (!response.ok) {
+        // Revert on error
+        set({
+          recentFiles: get().recentFiles.map((f) =>
+            f.id === id ? { ...f, starred: file.starred } : f
+          ),
+        })
+        throw new Error('Failed to toggle star')
+      }
+
+      const data = await response.json()
+      set({
+        recentFiles: get().recentFiles.map((f) =>
+          f.id === id ? data.file : f
+        ),
+      })
+    } catch (error) {
+      console.error('Toggle star error:', error)
+    }
+  },
+  deleteFile: async (id: string) => {
+    // Optimistic update
+    const previousFiles = get().recentFiles
+    set({
+      recentFiles: previousFiles.filter((f) => f.id !== id),
+      combineFiles: get().combineFiles.filter((f) => f.id !== id),
+      printFiles: get().printFiles.filter((f) => f.id !== id),
+    })
+
+    try {
+      const response = await fetch(`/api/files/${id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        // Revert on error
+        set({ recentFiles: previousFiles })
+        throw new Error('Failed to delete file')
+      }
+    } catch (error) {
+      console.error('Delete file error:', error)
+    }
+  },
+  renameFile: async (id: string, name: string) => {
+    // Optimistic update
+    const previousFiles = get().recentFiles
+    set({
+      recentFiles: get().recentFiles.map((f) =>
+        f.id === id ? { ...f, name } : f
+      ),
+    })
+
+    try {
+      const response = await fetch(`/api/files/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+
+      if (!response.ok) {
+        set({ recentFiles: previousFiles })
+        throw new Error('Failed to rename file')
+      }
+
+      const data = await response.json()
+      set({
+        recentFiles: get().recentFiles.map((f) =>
+          f.id === id ? data.file : f
+        ),
+      })
+    } catch (error) {
+      console.error('Rename file error:', error)
+    }
+  },
   selectedFiles: [],
   toggleFileSelection: (id) =>
     set((state) => ({
@@ -129,6 +334,38 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ combineFiles: [...state.combineFiles, file] })),
   removeCombineFile: (id) =>
     set((state) => ({ combineFiles: state.combineFiles.filter((f) => f.id !== id) })),
+  combineSelectedFiles: async () => {
+    const { combineFiles } = get()
+    if (combineFiles.length < 2) return null
+
+    set({ isCombining: true })
+    try {
+      const response = await fetch('/api/files/combine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileIds: combineFiles.map((f) => f.id) }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Combine failed' }))
+        throw new Error(errorData.error || 'Combine failed')
+      }
+
+      const data = await response.json()
+
+      // Refresh file list and clear combine list
+      await get().fetchFiles()
+      set({ combineFiles: [] })
+
+      return data.file as PdfFile
+    } catch (error) {
+      console.error('Combine files error:', error)
+      return null
+    } finally {
+      set({ isCombining: false })
+    }
+  },
+  isCombining: false,
 
   // Batch Print
   printFiles: [],
@@ -136,6 +373,42 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ printFiles: [...state.printFiles, file] })),
   removePrintFile: (id) =>
     set((state) => ({ printFiles: state.printFiles.filter((f) => f.id !== id) })),
+
+  // Compress
+  compressFile: async (id: string) => {
+    set({ isCompressing: true })
+    try {
+      const response = await fetch(`/api/files/${id}/compress`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Compress failed' }))
+        throw new Error(errorData.error || 'Compress failed')
+      }
+
+      const data = await response.json()
+
+      // Refresh file list to include the new compressed file
+      await get().fetchFiles()
+
+      return {
+        file: data.file as PdfFile,
+        compression: data.compression as {
+          originalSize: number
+          compressedSize: number
+          savedBytes: number
+          savedPercent: string
+        },
+      }
+    } catch (error) {
+      console.error('Compress file error:', error)
+      return null
+    } finally {
+      set({ isCompressing: false })
+    }
+  },
+  isCompressing: false,
 
   // Search
   searchQuery: '',

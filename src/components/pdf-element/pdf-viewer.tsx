@@ -1,6 +1,6 @@
 'use client'
 
-import { useAppStore, ChatMessage } from '@/store/app-store'
+import { useAppStore, ChatMessage, formatFileSize } from '@/store/app-store'
 import {
   Home,
   MessageSquare,
@@ -21,15 +21,31 @@ import {
   Paperclip,
   MessageCircle,
   X,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+
+// Types for pdfjs-dist (loaded dynamically)
+type PDFDocumentProxy = import('pdfjs-dist').PDFDocumentProxy
+type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
+
+const MIN_ZOOM = 50
+const MAX_ZOOM = 300
+const ZOOM_STEP = 25
 
 export function PdfViewer() {
   const {
@@ -38,23 +54,279 @@ export function PdfViewer() {
     pdfPage,
     setPdfPage,
     pdfTotalPages,
+    setPdfTotalPages,
     chatMessages,
     addChatMessage,
     isChatLoading,
     setIsChatLoading,
   } = useAppStore()
 
+  // UI state
   const [chatInput, setChatInput] = useState('')
   const [chatType, setChatType] = useState('pdf')
   const [showChat, setShowChat] = useState(true)
   const [showPrint, setShowPrint] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  // PDF rendering state
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null)
+  const [zoom, setZoom] = useState(100)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isRendering, setIsRendering] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pdfJsReady, setPdfJsReady] = useState(false)
+
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const pdfJsRef = useRef<typeof import('pdfjs-dist') | null>(null)
+  const renderTaskRef = useRef<import('pdfjs-dist').RenderTask | null>(null)
+  const printIframeRef = useRef<HTMLIFrameElement | null>(null)
+
+  // Dynamically import pdfjs-dist (client-side only)
+  useEffect(() => {
+    let cancelled = false
+    import('pdfjs-dist').then((mod) => {
+      if (cancelled) return
+      mod.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${mod.version}/build/pdf.worker.min.mjs`
+      pdfJsRef.current = mod
+      setPdfJsReady(true)
+    }).catch((err) => {
+      console.error('Failed to load pdfjs-dist:', err)
+      setError('Failed to initialize PDF viewer library.')
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  // Scroll chat to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages])
 
-  const file = selectedPdfFile || { name: 'document.pdf', pages: 1 }
+  // Update total pages when file changes
+  useEffect(() => {
+    if (selectedPdfFile) {
+      const totalPages = useAppStore.getState().pdfTotalPages
+      if (totalPages !== selectedPdfFile.pages) {
+        useAppStore.getState().setPdfTotalPages(selectedPdfFile.pages)
+      }
+    }
+  }, [selectedPdfFile])
+
+  // Load PDF document when selected file changes
+  useEffect(() => {
+    if (!selectedPdfFile || !pdfJsReady || !pdfJsRef.current) {
+      setPdfDoc(null)
+      setError(null)
+      return
+    }
+
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+
+    const loadPdf = async () => {
+      try {
+        const pdfjsLib = pdfJsRef.current!
+        const url = `/api/files/${selectedPdfFile.id}/download`
+        const loadingTask = pdfjsLib.getDocument(url)
+        const doc = await loadingTask.promise
+
+        if (cancelled) {
+          doc.destroy()
+          return
+        }
+
+        setPdfDoc(doc)
+        setPdfTotalPages(doc.numPages)
+        setPdfPage(1)
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load PDF:', err)
+          setError('Failed to load PDF file. The file may be corrupted or inaccessible.')
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadPdf()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPdfFile, pdfJsReady, setPdfPage, setPdfTotalPages])
+
+  // Render current page
+  const renderPage = useCallback(async () => {
+    if (!pdfDoc || !canvasRef.current) return
+
+    // Cancel any ongoing render
+    if (renderTaskRef.current) {
+      try {
+        renderTaskRef.current.cancel()
+      } catch {
+        // ignore cancel errors
+      }
+      renderTaskRef.current = null
+    }
+
+    setIsRendering(true)
+
+    try {
+      const page: PDFPageProxy = await pdfDoc.getPage(pdfPage)
+      const scale = zoom / 100
+      const viewport = page.getViewport({ scale })
+
+      const canvas = canvasRef.current
+      const context = canvas.getContext('2d')
+
+      if (!context) return
+
+      // Set canvas dimensions
+      const outputScale = window.devicePixelRatio || 1
+      canvas.width = Math.floor(viewport.width * outputScale)
+      canvas.height = Math.floor(viewport.height * outputScale)
+      canvas.style.width = Math.floor(viewport.width) + 'px'
+      canvas.style.height = Math.floor(viewport.height) + 'px'
+
+      const transform = outputScale !== 1
+        ? [outputScale, 0, 0, outputScale, 0, 0]
+        : undefined
+
+      const renderTask = page.render({
+        canvasContext: context,
+        viewport,
+        transform,
+      })
+
+      renderTaskRef.current = renderTask
+
+      await renderTask.promise
+
+      renderTaskRef.current = null
+    } catch (err: unknown) {
+      // RenderingCancelled is expected when navigating quickly
+      if (err && typeof err === 'object' && 'name' in err && (err as { name: string }).name === 'RenderingCancelledException') {
+        // This is normal, just ignore
+      } else {
+        console.error('Failed to render page:', err)
+        setError('Failed to render PDF page.')
+      }
+    } finally {
+      setIsRendering(false)
+    }
+  }, [pdfDoc, pdfPage, zoom])
+
+  // Render page when page or zoom changes
+  useEffect(() => {
+    if (!pdfDoc) return
+
+    let rafId: number
+    rafId = requestAnimationFrame(() => {
+      renderPage()
+    })
+
+    return () => {
+      cancelAnimationFrame(rafId)
+    }
+  }, [pdfDoc, pdfPage, zoom, renderPage])
+
+  // Clean up PDF document on unmount
+  useEffect(() => {
+    return () => {
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel()
+        } catch {
+          // ignore
+        }
+      }
+      if (pdfDoc) {
+        pdfDoc.destroy()
+      }
+      if (printIframeRef.current && printIframeRef.current.parentNode) {
+        printIframeRef.current.parentNode.removeChild(printIframeRef.current)
+        printIframeRef.current = null
+      }
+    }
+  }, [])
+
+  // Zoom handlers
+  const handleZoomIn = () => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))
+  const handleZoomOut = () => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))
+  const handleFitWidth = () => {
+    if (!containerRef.current || !pdfDoc) return
+    // We need to get the page width at scale=1 to calculate fit-width scale
+    pdfDoc.getPage(pdfPage).then((page) => {
+      const viewport = page.getViewport({ scale: 1 })
+      const containerWidth = containerRef.current!.clientWidth - 48 // padding
+      const fitScale = Math.floor((containerWidth / viewport.width) * 100)
+      setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fitScale)))
+    })
+  }
+  const handleFitPage = () => {
+    if (!containerRef.current || !pdfDoc) return
+    pdfDoc.getPage(pdfPage).then((page) => {
+      const viewport = page.getViewport({ scale: 1 })
+      const containerWidth = containerRef.current!.clientWidth - 48
+      const containerHeight = containerRef.current!.clientHeight - 48
+      const scaleW = containerWidth / viewport.width
+      const scaleH = containerHeight / viewport.height
+      const fitScale = Math.floor(Math.min(scaleW, scaleH) * 100)
+      setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fitScale)))
+    })
+  }
+  const handleResetZoom = () => setZoom(100)
+
+  // Page navigation handlers
+  const handlePrevPage = () => setPdfPage(Math.max(1, pdfPage - 1))
+  const handleNextPage = () => setPdfPage(Math.min(pdfTotalPages, pdfPage + 1))
+  const handlePageInput = (value: string) => {
+    const num = parseInt(value, 10)
+    if (!isNaN(num) && num >= 1 && num <= pdfTotalPages) {
+      setPdfPage(num)
+    }
+  }
+
+  // Print handler
+  const handlePrint = () => {
+    if (!selectedPdfFile) return
+
+    const pdfUrl = `/api/files/${selectedPdfFile.id}/download`
+
+    // Remove existing iframe if any
+    if (printIframeRef.current && printIframeRef.current.parentNode) {
+      printIframeRef.current.parentNode.removeChild(printIframeRef.current)
+    }
+
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = 'none'
+    iframe.style.overflow = 'hidden'
+
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus()
+        iframe.contentWindow?.print()
+      } catch (err) {
+        console.error('Print failed:', err)
+        // Fallback: open in new tab
+        window.open(pdfUrl, '_blank')
+      }
+    }
+
+    iframe.src = pdfUrl
+    document.body.appendChild(iframe)
+    printIframeRef.current = iframe
+  }
+
+  const file = selectedPdfFile || { name: 'document.pdf', pages: 1, size: 0, id: '' }
 
   const handleSendMessage = async () => {
     if (!chatInput.trim() || isChatLoading) return
@@ -77,6 +349,7 @@ export function PdfViewer() {
         body: JSON.stringify({
           message: chatInput.trim(),
           fileName: file.name,
+          fileId: file.id || undefined,
           history: chatMessages.map((m) => ({ role: m.role, content: m.content })),
         }),
       })
@@ -108,10 +381,29 @@ export function PdfViewer() {
     setChatInput(question)
   }
 
+  const handleDownload = async () => {
+    if (!selectedPdfFile) return
+    try {
+      const response = await fetch(`/api/files/${selectedPdfFile.id}/download?download=1`)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = selectedPdfFile.name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download error:', err)
+    }
+  }
+
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-gray-100">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setCurrentView('home')}
@@ -146,6 +438,51 @@ export function PdfViewer() {
             <LayoutGrid className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Zoom Controls (center) */}
+        {selectedPdfFile && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleZoomOut}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors disabled:opacity-30"
+              disabled={zoom <= MIN_ZOOM}
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleResetZoom}
+              className="min-w-[52px] px-2 py-1 rounded hover:bg-gray-100 text-xs font-medium text-gray-600 transition-colors text-center"
+              title="Reset to 100%"
+            >
+              {zoom}%
+            </button>
+            <button
+              onClick={handleZoomIn}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors disabled:opacity-30"
+              disabled={zoom >= MAX_ZOOM}
+              title="Zoom In"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <Separator orientation="vertical" className="h-5 mx-1" />
+            <button
+              onClick={handleFitWidth}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+              title="Fit to Width"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleFitPage}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+              title="Fit to Page"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowChat(!showChat)}
@@ -157,12 +494,19 @@ export function PdfViewer() {
           >
             <MessageCircle className="w-4 h-4" />
           </button>
-          <button className="p-2 rounded hover:bg-gray-100 text-gray-500 transition-colors" title="Download">
+          <button
+            onClick={handleDownload}
+            className="p-2 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+            title="Download"
+          >
             <Download className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowPrint(!showPrint)}
-            className="p-2 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+            className={cn(
+              'p-2 rounded transition-colors',
+              showPrint ? 'bg-blue-50 text-blue-500 border border-blue-200' : 'hover:bg-gray-100 text-gray-500'
+            )}
             title="Print"
           >
             <Printer className="w-4 h-4" />
@@ -246,7 +590,11 @@ export function PdfViewer() {
                 <Button variant="outline" className="w-full h-8 text-xs">
                   Add as Template
                 </Button>
-                <Button className="w-full h-8 text-xs bg-[#4A90D9] hover:bg-[#3A7BC8]">
+                <Button
+                  className="w-full h-8 text-xs bg-[#4A90D9] hover:bg-[#3A7BC8]"
+                  onClick={handlePrint}
+                  disabled={!selectedPdfFile}
+                >
                   Print
                 </Button>
                 <Button variant="outline" className="w-full h-8 text-xs" onClick={() => setShowPrint(false)}>
@@ -259,48 +607,100 @@ export function PdfViewer() {
 
         {/* PDF Document Viewer (Center) */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
-            <div className="bg-white shadow-lg rounded-sm w-full max-w-[680px] aspect-[8.5/11] p-12">
-              <div className="space-y-4">
-                <h1 className="text-xl font-bold text-gray-900 leading-tight">
-                  User Trust and Opinion Leader Interaction: The Moderating Effect of Psychological Congruence on Information Adoption
-                </h1>
-                <div className="text-sm text-gray-600 space-y-3">
-                  <p className="font-semibold">Abstract</p>
-                  <p className="text-xs leading-relaxed">
-                    This study investigates the relationship between user trust and opinion leader interaction in the context of social media platforms. We examine how psychological congruence moderates the effect of trust on information adoption behaviors. Drawing on the elaboration likelihood model and social influence theory, we propose that psychological congruence between users and opinion leaders strengthens the positive relationship between trust and information adoption.
-                  </p>
-                  <p className="font-semibold mt-4">1. Introduction</p>
-                  <p className="text-xs leading-relaxed">
-                    In the era of social media, opinion leaders play a crucial role in shaping user attitudes and behaviors. The concept of opinion leadership, first introduced by Lazarsfeld et al. (1944), has evolved significantly with the rise of digital platforms. Users increasingly rely on opinion leaders for product recommendations, news consumption, and decision-making processes.
-                  </p>
-                  <p className="text-xs leading-relaxed mt-2">
-                    Trust has been identified as a fundamental determinant of information adoption in online environments (McKnight et al., 2002). However, the mechanisms through which trust influences information adoption, particularly in the context of opinion leader interactions, remain underexplored. This study addresses this gap by introducing psychological congruence as a moderating variable.
-                  </p>
-                </div>
+          {/* Canvas Area */}
+          <div
+            ref={containerRef}
+            className="flex-1 overflow-auto flex items-start justify-center p-6"
+          >
+            {!selectedPdfFile ? (
+              /* No file selected */
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <Eye className="w-16 h-16 mb-4 opacity-30" />
+                <p className="text-sm font-medium">No file selected</p>
+                <p className="text-xs mt-1">Select a PDF file to view it here</p>
               </div>
-            </div>
+            ) : isLoading ? (
+              /* Loading PDF */
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <Loader2 className="w-10 h-10 animate-spin mb-3 text-[#4A90D9]" />
+                <p className="text-sm">Loading PDF...</p>
+              </div>
+            ) : error ? (
+              /* Error state */
+              <div className="flex flex-col items-center justify-center h-full text-red-400">
+                <AlertCircle className="w-10 h-10 mb-3" />
+                <p className="text-sm font-medium text-red-500">Failed to load PDF</p>
+                <p className="text-xs mt-1 text-red-400 max-w-sm text-center">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setError(null)
+                    // Re-trigger load by toggling file selection
+                    const currentFile = selectedPdfFile
+                    useAppStore.getState().setSelectedPdfFile(null)
+                    setTimeout(() => useAppStore.getState().setSelectedPdfFile(currentFile), 100)
+                  }}
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  Retry
+                </Button>
+              </div>
+            ) : !pdfJsReady ? (
+              /* Waiting for pdfjs */
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <Loader2 className="w-8 h-8 animate-spin mb-3 text-[#4A90D9]" />
+                <p className="text-xs">Initializing PDF viewer...</p>
+              </div>
+            ) : pdfDoc ? (
+              /* PDF Canvas */
+              <div className="relative">
+                {isRendering && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10 rounded-sm">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#4A90D9]" />
+                  </div>
+                )}
+                <canvas
+                  ref={canvasRef}
+                  className="shadow-lg rounded-sm bg-white"
+                  style={{ display: 'block' }}
+                />
+              </div>
+            ) : null}
           </div>
 
-          {/* Page Navigation */}
-          <div className="flex items-center justify-center gap-3 py-2 bg-white border-t border-gray-200">
+          {/* Page Navigation Bar */}
+          <div className="flex items-center justify-center gap-2 py-2 bg-white border-t border-gray-200 shrink-0">
             <button
-              onClick={() => setPdfPage(Math.max(1, pdfPage - 1))}
+              onClick={handlePrevPage}
               className="p-1.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 transition-colors"
               disabled={pdfPage <= 1}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs text-gray-500">
-              {pdfPage} / {pdfTotalPages}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                min={1}
+                max={pdfTotalPages}
+                value={pdfPage}
+                onChange={(e) => handlePageInput(e.target.value)}
+                className="w-12 h-7 text-xs text-center p-0 border-gray-300 rounded"
+              />
+              <span className="text-xs text-gray-500">/ {pdfTotalPages}</span>
+            </div>
             <button
-              onClick={() => setPdfPage(Math.min(pdfTotalPages, pdfPage + 1))}
+              onClick={handleNextPage}
               className="p-1.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 transition-colors"
               disabled={pdfPage >= pdfTotalPages}
             >
               <ChevronRight className="w-4 h-4" />
             </button>
+            <Separator orientation="vertical" className="h-4 mx-1" />
+            <span className="text-[11px] text-gray-400">
+              {selectedPdfFile ? `${selectedPdfFile.name} · ${formatFileSize(selectedPdfFile.size)}` : ''}
+            </span>
           </div>
         </div>
 
