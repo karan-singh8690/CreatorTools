@@ -22,6 +22,9 @@ export const metadata: Metadata = {
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
+  other: {
+    "impact-site-verification": "8590153c-162b-4ffa-a19c-14f34e747fc0",
+  },
 };
 
 export default function RootLayout({
