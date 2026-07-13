@@ -1,0 +1,10 @@
+{
+  "id": "cln-mriqledy-or1hte",
+  "createdAt": 1783917792790,
+  "stage": "queued",
+  "message": "Queued for processing",
+  "percent": 0,
+  "originalName": "test-scanned.pdf",
+  "originalSizeBytes": 3527116,
+  "originalPath": "/tmp/creatortools-cleanup/analyze-1783917792791-tnp8m3/test-scanned.pdf"
+}

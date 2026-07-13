@@ -244,3 +244,34 @@ Stage Summary:
 - Three-tier strategy: (1) vector text-op strip → 100% vector; (2) surgical region repair → vector + small patched region; (3) full-page raster → only for background/clean-scan/flattened.
 - The surgical approach is actually BETTER than the old raster at visual watermark removal (0.0% residual vs 1.5% JPEG artifacts) because there's no rasterization to introduce artifacts.
 - Files modified: src/lib/pdf-cleanup/rebuild.ts (rewrote stripTextWatermarkFromVector with tokenizer; added surgicalWatermarkRepair; added serialize helpers), src/lib/pdf-cleanup/content-stream.ts (exported Token type), src/lib/pdf-cleanup/index.ts (isWatermarkOnlyVector + two-stage Step 1).
+
+---
+Task ID: 9
+Agent: main (Z.ai Code)
+Task: Better scan cleanup — add deskew, border removal, hole punch removal, margin cleanup, speckle removal, shadow removal, page edge detection.
+
+Work Log:
+- Rewrote raster-clean.ts with a multi-stage scan cleanup pipeline (was: CLAHE + threshold + sharpen only):
+  1. Deskew: projection-profile skew detection. Downscale to 400px grayscale, blur+normalise+threshold to binary, compute horizontal projection variance for angles -12° to +12° (coarse 0.5° + fine 0.1° steps) using a shear-based approximation (per-row horizontal shift = tan(angle) × (y-centerY)). Max variance = skew angle. Rotate original by detected angle. Fixed a critical bug: pixel lookup used x instead of sx (shifted column), making all angles produce identical variance.
+  2. Page edge detection + border removal: two-pass content bbox detection. Pass 1 skips dark border bands (>30% dark pixels per column/row). Pass 2 finds content area (>0.5% dark = text/graphics). Crops to content bbox, removing dark scan borders + dirty margins.
+  3. Hole punch removal: scans 10% margin bands for dark clusters via connected-component labeling (4-connectivity BFS on downscaled mask). Clusters matching hole-punch heuristic (size 15-400px, aspect ratio 0.6-1.7) are filled with white ellipses composited on the original.
+  4. Speckle removal: median(3) filter for salt-and-pepper noise / scanner dots.
+  5. Shadow removal: illumination correction via background estimation. result[i] = clamp(orig[i] × 255 / max(bg[i], 8)) where bg = heavy blur (sigma = min(w,h)/30). Removes binding shadows, uneven lighting, gradient backgrounds. Fixed: output as PNG (not raw buffer) to preserve dimension metadata.
+  6. CLAHE + threshold + sharpen: existing stages, preserved.
+- Pipeline order (critical for accuracy): flatten → border removal → shadow removal → deskew → hole punch removal → speckle → CLAHE → threshold → sharpen. Border removal runs FIRST (while dark border is still visible; shadow removal would lighten it below detection threshold). Deskew runs AFTER border+shadow removal (dark borders and shadows overwhelm the text-line signal).
+- Fixed buildImagePdf to accept optional pageWidthPts/pageHeightPts — uses original page dimensions (A4) instead of pixel-as-points, producing correctly-sized PDF pages. Updated orchestrator to pass info.pageSize.
+- Fixed cleanPageRaster to return OUTPUT image dimensions (after deskew/border-removal may change them), not source dimensions.
+- Created a realistic test scanned PDF (4° skew + dark 40px border + 3 hole punches + speckle noise + binding shadow gradient) to verify each stage. Verified results:
+  - Brightness: 201 → 242 (shadow removal working)
+  - Left-margin dark pixels: 27.2% → 6.0% (border + hole punch + shadow removal working)
+  - Isolated speckles: 105 → 48 (54% reduction, speckle removal working)
+  - File size: 3.5MB → 50KB (99% reduction)
+  - Page size: correct A4 (595×842 pts)
+- Regression test: watermark vector path still works (3,839 bytes, 0 DRAFT, 9 body lines searchable, 0 embedded images).
+- Lint: 0 errors.
+
+Stage Summary:
+- Scan cleanup now has 7 new stages beyond the original CLAHE+threshold+sharpen: deskew, page edge detection, border removal, hole punch removal, margin cleanup, speckle removal, shadow removal.
+- Each stage is a real implementation using sharp's image processing operations + custom algorithms (projection-profile deskew, connected-component hole-punch detection, background-estimation shadow removal).
+- Pipeline order is critical: border removal before shadow removal (shadow lightens borders), deskew after border+shadow removal (noise overwhelms text-line signal).
+- Files modified: src/lib/pdf-cleanup/raster-clean.ts (full rewrite with 7 new stage functions), src/lib/pdf-cleanup/rebuild.ts (buildImagePdf pageWidthPts/pageHeightPts), src/lib/pdf-cleanup/index.ts (pass info.pageSize to buildImagePdf).

@@ -398,9 +398,17 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
         currentPath = searchablePdf;
       } else {
         // Image-only (flattened) — explicit user choice to discard text.
+        // Pass original page dimensions so the PDF page has the correct
+        // physical size (e.g. A4), not pixel-as-points.
         const imagePdf = path.join(jobDir, 'image.pdf');
         await buildImagePdf(
-          cleanPages.map((p) => ({ path: p.path, width: p.width, height: p.height })),
+          cleanPages.map((p) => ({
+            path: p.path,
+            width: p.width,
+            height: p.height,
+            pageWidthPts: info.pageSize?.width,
+            pageHeightPts: info.pageSize?.height,
+          })),
           imagePdf,
           options.quality
         );

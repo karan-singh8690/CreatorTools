@@ -1,0 +1,14 @@
+{
+  "id": "cln-mrirblhh-qi9yas",
+  "createdAt": 1783919015045,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "test-watermark.pdf",
+  "originalSizeBytes": 2326,
+  "originalPath": "/tmp/creatortools-cleanup/cleanup-1783919015047-d20xkp/test-watermark.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783919016213-brdsk1/output.pdf",
+  "outputName": "test-watermark-cleaned.pdf",
+  "outputSizeBytes": 3839,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mrirblhh-qi9yas"
+}

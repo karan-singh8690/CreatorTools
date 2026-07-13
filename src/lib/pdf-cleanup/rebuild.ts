@@ -25,6 +25,11 @@ interface PageImage {
   path: string;
   width: number;
   height: number;
+  /** Optional: PDF page dimensions in points. If provided, the page is sized
+   *  to these dimensions and the image is scaled to fill (preserves the
+   *  original page size). If omitted, pixel dimensions are used as points. */
+  pageWidthPts?: number;
+  pageHeightPts?: number;
 }
 
 /** Build an image-only (flattened) PDF from cleaned page images. */
@@ -52,8 +57,12 @@ export async function buildImagePdf(
         embedded = await doc.embedJpg(imgBuf);
       }
     }
-    const page = doc.addPage([p.width, p.height]);
-    page.drawImage(embedded, { x: 0, y: 0, width: p.width, height: p.height });
+    // Use original page dimensions if provided (correct physical size);
+    // otherwise fall back to pixel-as-points.
+    const pageW = p.pageWidthPts ?? p.width;
+    const pageH = p.pageHeightPts ?? p.height;
+    const page = doc.addPage([pageW, pageH]);
+    page.drawImage(embedded, { x: 0, y: 0, width: pageW, height: pageH });
   }
 
   const bytes = await doc.save({ useObjectStreams: true });

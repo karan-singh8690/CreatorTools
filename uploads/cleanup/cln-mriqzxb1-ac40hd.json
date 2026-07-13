@@ -1,0 +1,14 @@
+{
+  "id": "cln-mriqzxb1-ac40hd",
+  "createdAt": 1783918470493,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "test-scanned.pdf",
+  "originalSizeBytes": 3527114,
+  "originalPath": "/tmp/creatortools-cleanup/cleanup-1783918470494-ue09y1/test-scanned.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783918472253-sryz4o/output.pdf",
+  "outputName": "test-scanned-cleaned.pdf",
+  "outputSizeBytes": 52616,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mriqzxb1-ac40hd"
+}
