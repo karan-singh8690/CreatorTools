@@ -31,7 +31,8 @@ import {
   isLikelyWatermarkText,
 } from './types';
 
-interface WordBox {
+/** A single word with its bounding box (top-left origin, PDF points). */
+export interface WordBox {
   text: string;
   xMin: number;
   yMin: number;
@@ -39,7 +40,16 @@ interface WordBox {
   yMax: number;
 }
 
-interface ParsedPage {
+/** Parsed page: dimensions + word boxes. */
+export interface ParsedPage {
+  width: number;
+  height: number;
+  words: WordBox[];
+}
+
+/** Per-page word boxes with the original page number attached. */
+export interface PageWords {
+  pageNumber: number;
   width: number;
   height: number;
   words: WordBox[];
@@ -69,6 +79,38 @@ function parseBboxHtml(html: string): ParsedPage[] {
     pages.push({ width, height, words });
   }
   return pages;
+}
+
+/**
+ * Extract word-level bounding boxes for a range of pages using
+ * `pdftotext -bbox`. Returns per-page dimensions + word boxes (top-left
+ * origin, PDF points). Used to rebuild a lossless invisible text layer
+ * over a cleaned raster image (preserves searchability without OCR).
+ */
+export async function extractWordBoxes(
+  file: string,
+  firstPage: number,
+  lastPage: number
+): Promise<PageWords[]> {
+  const tmpDir = await createJobDir('bbox');
+  const bboxHtmlPath = path.join(tmpDir, 'bbox.html');
+  try {
+    await run(
+      'pdftotext',
+      ['-bbox', '-f', String(firstPage), '-l', String(lastPage), file, bboxHtmlPath],
+      { timeoutMs: 90_000 }
+    );
+    const html = await fs.readFile(bboxHtmlPath, 'utf8');
+    const pages = parseBboxHtml(html);
+    return pages.map((p, i) => ({
+      pageNumber: firstPage + i,
+      width: p.width,
+      height: p.height,
+      words: p.words,
+    }));
+  } finally {
+    await rmrf(tmpDir);
+  }
 }
 
 /** Find watermark candidates among word boxes on a single page. */

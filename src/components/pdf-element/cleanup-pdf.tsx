@@ -506,7 +506,7 @@ const CHECKBOX_FIELDS: {
   { key: 'preserveColors', label: 'Preserve Colors', hint: 'Keep original color information', icon: Palette },
   { key: 'preserveSignatures', label: 'Preserve Signatures', hint: 'Protect handwritten signature regions', icon: ShieldCheck },
   { key: 'keepTransparency', label: 'Keep Transparency', hint: 'Preserve alpha channel in output', icon: Layers },
-  { key: 'runOcr', label: 'Run OCR', hint: 'Add invisible searchable text layer', icon: ScanLine },
+  { key: 'runOcr', label: 'Run OCR', hint: 'OCR scanned PDFs to make them searchable (text PDFs already preserved)', icon: ScanLine },
   { key: 'compressAfter', label: 'Compress After Cleaning', hint: 'Run Ghostscript for smaller file', icon: FileArchive },
 ]
 

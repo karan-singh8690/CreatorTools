@@ -40,10 +40,10 @@ export type OutputFormat =
   | 'flattened'; // Flattened PDF (no layers, image-based)
 
 export const OUTPUT_FORMATS: { id: OutputFormat; label: string; description: string }[] = [
-  { id: 'original', label: 'Original Quality', description: 'Keep full fidelity, no compression' },
-  { id: 'compressed', label: 'Compressed', description: 'Reduce file size with Ghostscript' },
-  { id: 'searchable', label: 'Searchable', description: 'Add invisible OCR text layer' },
-  { id: 'flattened', label: 'Flattened', description: 'Image-only PDF, no vector layers' },
+  { id: 'original', label: 'Original Quality', description: 'Full fidelity · searchable text preserved' },
+  { id: 'compressed', label: 'Compressed', description: 'Smaller file via Ghostscript · searchable text preserved' },
+  { id: 'searchable', label: 'Searchable', description: 'Force OCR on scans (text PDFs already preserved)' },
+  { id: 'flattened', label: 'Flattened', description: 'Image-only · discards text layer' },
 ];
 
 // ─── Advanced options ────────────────────────────────────────────────────────

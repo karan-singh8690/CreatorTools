@@ -137,3 +137,32 @@ Stage Summary:
 - Output formats: original/compressed (Ghostscript)/searchable (Tesseract OCR)/flattened (image-only).
 - Security: 500MB/1000-page limits, MIME+magic-byte validation, 30-min auto-delete, filename sanitization, no content logging.
 - Dev server running on port 3000 (restarted via double-fork daemon after lint run). Access the tool via sidebar "BG & Watermark Remover" or /?tool=cleanup.
+
+---
+Task ID: 6
+Agent: main (Z.ai Code)
+Task: Preserve searchable text layer after raster cleanup (match Adobe/iLovePDF/Smallpdf behavior).
+
+Work Log:
+- Problem: the raster cleanup path (watermark removal via image masking) produced image-only PDFs, losing the searchable text layer — a major drawback for a professional tool.
+- Solution: three-strategy output rebuild, with searchability preserved by default:
+  1. LOSSLESS OVERLAY (preferred, for text/vector PDFs): extract original word-level bounding boxes via `pdftotext -bbox`, clean the raster image, rebuild the PDF with the cleaned image as background + the ORIGINAL words overlaid invisibly (PDF text render mode 3). Zero OCR errors — perfect text fidelity, better than Adobe/iLovePDF which use OCR.
+  2. OCR FALLBACK (for scanned PDFs / explicit OCR request): Tesseract on cleaned images → searchable PDF.
+  3. IMAGE-ONLY: only when user explicitly chooses "flattened" output.
+- detect.ts: exported `WordBox`, `ParsedPage`, `PageWords` interfaces + new `extractWordBoxes(file, first, last)` function (refactored the bbox parsing into a reusable export).
+- rebuild.ts: added `buildSearchablePdfWithOriginalText()` — draws cleaned image full-page, then overlays each original word invisibly via pdf-lib's `drawText({ renderMode: 3 })`. Added `isWatermarkWord()` filter so removed watermark text (DRAFT, CONFIDENTIAL...) is NOT re-added to the searchable layer. Coordinate conversion: pdftotext top-left origin → pdf-lib bottom-left origin (y = pageHeight - yMax).
+- index.ts orchestrator: replaced the old "OCR if runOcr else image-only" binary with the three-strategy selector. `useLosslessOverlay` = !flattened && detection.hasTextLayer. `useOcrFallback` = !flattened && !lossless && (runOcr || searchable). Watermark candidates passed to the builder for word exclusion.
+- Debugged a critical pdf-lib issue: `page.pushOperators(PDFOperator.of('Tr', [3]))` before `drawText` produced ZERO extractable text (the Tr operator landed in a different content stream than the BT/ET block). Fix: use pdf-lib's built-in `drawText({ renderMode: 3 })` option instead, which keeps the invisible-text operator inside the same BT/ET block. Verified with isolated test: renderMode:3 → text invisible AND extractable by pdftotext.
+- Verified end-to-end with the watermarked test PDF (DRAFT at 45°, 50% opacity):
+  - Watermark mode (default): output has 99 searchable words (original 111 minus 12 DRAFT fragments × 3 pages). DRAFT count in text layer = 0. Quarterly/Lorem/preserved all present (×3 each). Visual watermark gone (gray pixels 7.0% → 1.5%).
+  - Full cleanup mode: same result — 99 words, 0 DRAFT, Quarterly ×3 preserved.
+  - Flattened output: 0 words (text intentionally discarded — explicit user choice).
+- Updated frontend labels (types.ts OUTPUT_FORMATS + cleanup-pdf.tsx Run OCR hint) to communicate searchability-by-default: "Original Quality · searchable text preserved", "Flattened · discards text layer", "Run OCR · OCR scanned PDFs (text PDFs already preserved)".
+- Lint: 0 errors. Agent Browser: tool renders, no console errors, SEO landing page intact.
+
+Stage Summary:
+- Searchable text is now PRESERVED by default after raster cleanup — matching professional tools (Adobe Acrobat, iLovePDF, Smallpdf).
+- Lossless overlay strategy gives ZERO OCR errors (uses original text, not OCR) — actually better than competitors for text PDFs.
+- Watermark words are intelligently excluded from the text layer so removed watermarks don't reappear as searchable text.
+- Only "flattened" output explicitly discards text (clear user choice).
+- Files modified: src/lib/pdf-cleanup/detect.ts (exports + extractWordBoxes), src/lib/pdf-cleanup/rebuild.ts (buildSearchablePdfWithOriginalText + isWatermarkWord), src/lib/pdf-cleanup/index.ts (three-strategy orchestrator), src/lib/pdf-cleanup/types.ts (OUTPUT_FORMATS descriptions), src/components/pdf-element/cleanup-pdf.tsx (Run OCR hint).

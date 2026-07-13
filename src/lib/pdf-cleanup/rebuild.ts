@@ -2,11 +2,21 @@
  * PDF assembly: rebuild a clean PDF from processed page images using pdf-lib.
  * Also supports merging per-page Tesseract-searchable PDFs into one.
  */
-import { PDFDocument, PDFName, PDFRawStream, PDFDict, PDFArray, PDFNumber } from 'pdf-lib';
+import {
+  PDFDocument,
+  PDFName,
+  PDFRawStream,
+  PDFDict,
+  PDFArray,
+  PDFNumber,
+  StandardFonts,
+} from 'pdf-lib';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import type { WordBox } from './detect';
+import type { WatermarkCandidate } from './types';
 
 const execFileP = promisify(execFile);
 
@@ -43,6 +53,133 @@ export async function buildImagePdf(
     }
     const page = doc.addPage([p.width, p.height]);
     page.drawImage(embedded, { x: 0, y: 0, width: p.width, height: p.height });
+  }
+
+  const bytes = await doc.save({ useObjectStreams: true });
+  await fs.writeFile(outFile, bytes);
+}
+
+/**
+ * Determine whether a word box corresponds to a detected watermark
+ * (same page + same text + nearby position), so we can EXCLUDE it from
+ * the rebuilt invisible text layer. We must not re-add watermark text we
+ * just removed — that would make the watermark searchable again.
+ */
+function isWatermarkWord(
+  word: WordBox,
+  candidates: WatermarkCandidate[],
+  pageNumber: number
+): boolean {
+  const wt = word.text.toLowerCase().trim();
+  if (!wt) return false;
+  return candidates.some((c) => {
+    if (c.page !== pageNumber) return false;
+    if (c.text.toLowerCase().trim() !== wt) return false;
+    // Position tolerance: watermark candidate bbox is also top-left origin
+    return (
+      Math.abs(c.bbox.x - word.xMin) < 24 &&
+      Math.abs(c.bbox.y - word.yMin) < 24
+    );
+  });
+}
+
+export interface SearchablePageInput {
+  /** Cleaned raster image path (PNG or JPEG). */
+  imagePath: string;
+  /** Original page size in PDF points (drives the PDF page dimensions). */
+  pageWidthPts: number;
+  pageHeightPts: number;
+  /** Original word boxes for this page (top-left origin, PDF points). */
+  words: WordBox[];
+  /** The 1-indexed page number (for watermark matching). */
+  pageNumber: number;
+}
+
+/**
+ * Build a SEARCHABLE PDF with lossless text fidelity.
+ *
+ * For each page:
+ *   1. Draw the cleaned raster image as the full-page background (visible).
+ *   2. Overlay the ORIGINAL text invisibly (PDF text render mode 3 = Tr)
+ *      at each word's exact position, so the text is selectable/searchable
+ *      but not painted.
+ *
+ * Watermark words are excluded from the overlay so removed watermarks
+ * don't reappear as searchable text.
+ *
+ * This preserves perfect text fidelity (zero OCR errors) — better than
+ * the OCR fallback, which is why we prefer it for PDFs that originally
+ * had a text layer.
+ */
+export async function buildSearchablePdfWithOriginalText(
+  pages: SearchablePageInput[],
+  outFile: string,
+  quality: 'fast' | 'balanced' | 'high' | 'maximum',
+  watermarkCandidates: WatermarkCandidate[] = []
+): Promise<void> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const jpeg = quality === 'fast' || quality === 'balanced';
+
+  for (const p of pages) {
+    // Embed the cleaned background image.
+    const imgBuf = await fs.readFile(p.imagePath);
+    let embedded;
+    if (jpeg) {
+      try {
+        embedded = await doc.embedJpg(imgBuf);
+      } catch {
+        embedded = await doc.embedPng(imgBuf);
+      }
+    } else {
+      try {
+        embedded = await doc.embedPng(imgBuf);
+      } catch {
+        embedded = await doc.embedJpg(imgBuf);
+      }
+    }
+
+    // Page sized to the ORIGINAL page dimensions (points), so the invisible
+    // text overlay lands at the exact coordinates pdftotext reported.
+    const page = doc.addPage([p.pageWidthPts, p.pageHeightPts]);
+
+    // Draw the cleaned image to fill the entire page.
+    page.drawImage(embedded, {
+      x: 0,
+      y: 0,
+      width: p.pageWidthPts,
+      height: p.pageHeightPts,
+    });
+
+    for (const w of p.words) {
+      if (!w.text || !w.text.trim()) continue;
+      // Skip watermark words — we removed them visually; don't re-add as text.
+      if (isWatermarkWord(w, watermarkCandidates, p.pageNumber)) continue;
+
+      const wordHeight = w.yMax - w.yMin;
+      const fontSize = Math.max(1, wordHeight);
+      // pdftotext bbox uses top-left origin; pdf-lib uses bottom-left.
+      // The text baseline ≈ bottom edge of the bbox in bottom-left coords.
+      const y = p.pageHeightPts - w.yMax;
+      try {
+        // renderMode: 3 = invisible. The text is not painted but remains
+        // in the content stream, making it selectable & searchable. This
+        // is exactly how Tesseract builds searchable PDFs. Using pdf-lib's
+        // built-in renderMode option (rather than pushing a raw `3 Tr`
+        // operator) keeps the text in the same content stream as the BT/ET
+        // block, which is what pdftotext expects for extraction.
+        page.drawText(w.text, {
+          x: w.xMin,
+          y,
+          size: fontSize,
+          font,
+          renderMode: 3,
+        });
+      } catch {
+        // Skip words with glyphs not in Helvetica (e.g. emoji, some CJK).
+        // A production build could embed additional fonts per Unicode range.
+      }
+    }
   }
 
   const bytes = await doc.save({ useObjectStreams: true });

@@ -23,11 +23,12 @@ import {
   rmrf,
   run,
 } from './utils';
-import { analyzePdf, repairPdf } from './detect';
+import { analyzePdf, repairPdf, extractWordBoxes } from './detect';
 import { cleanPageRaster, maskWatermarkRegion } from './raster-clean';
 import { ocrPages } from './ocr';
 import {
   buildImagePdf,
+  buildSearchablePdfWithOriginalText,
   mergeSearchablePdfs,
   compressWithGhostscript,
   optimizeWithQpdf,
@@ -258,8 +259,68 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
         cleanPages.push({ page, path: r.pngPath, width: r.width, height: r.height });
       }
 
-      // ── Step 3: OCR (optional) ────────────────────────────────────────
-      if (options.runOcr || options.outputFormat === 'searchable') {
+      // ── Step 3: Rebuild the output PDF — preserve searchability ────────
+      //
+      // Professional tools (Adobe Acrobat, iLovePDF, Smallpdf) preserve the
+      // searchable text layer whenever possible. We do the same with three
+      // strategies, chosen in priority order:
+      //
+      //   1. LOSSLESS OVERLAY (preferred): the source had a text layer, so
+      //      we overlay the ORIGINAL words invisibly (PDF text render mode
+      //      3) on the cleaned image. Zero OCR errors — perfect fidelity.
+      //      Watermark words are excluded so removed watermarks don't
+      //      reappear as searchable text.
+      //
+      //   2. OCR FALLBACK: the source had no text layer (scanned), OR the
+      //      user explicitly requested OCR. We run Tesseract on each
+      //      cleaned image to build a fresh searchable text layer.
+      //
+      //   3. IMAGE-ONLY: only when the user explicitly chose "flattened"
+      //      output (discard text). This is the only path that loses
+      //      searchability, and it's an explicit user choice.
+      //
+      const wantsFlattened = options.outputFormat === 'flattened';
+      const useLosslessOverlay =
+        !wantsFlattened && detection.hasTextLayer;
+      const useOcrFallback =
+        !wantsFlattened &&
+        !useLosslessOverlay &&
+        (options.runOcr || options.outputFormat === 'searchable');
+
+      if (useLosslessOverlay) {
+        await updateProgress(jobId, {
+          stage: 'optimizing',
+          message: 'Preserving searchable text layer (lossless overlay)…',
+          percent: 76,
+        });
+
+        // Re-extract word boxes for the ORIGINAL pdf (pre-strip) so the
+        // overlay matches the original text positions exactly.
+        const wmPages =
+          pageNumbers.length > 0
+            ? await extractWordBoxes(originalPath, pageNumbers[0], pageNumbers[pageNumbers.length - 1])
+            : [];
+        // Map cleaned images → their word boxes by page number.
+        const overlayPages = cleanPages.map((cp) => {
+          const wp = wmPages.find((w) => w.pageNumber === cp.page);
+          return {
+            imagePath: cp.path,
+            pageWidthPts: wp?.width ?? info.pageSize?.width ?? cp.width,
+            pageHeightPts: wp?.height ?? info.pageSize?.height ?? cp.height,
+            words: wp?.words ?? [],
+            pageNumber: cp.page,
+          };
+        });
+
+        const searchablePdf = path.join(jobDir, 'searchable-lossless.pdf');
+        await buildSearchablePdfWithOriginalText(
+          overlayPages,
+          searchablePdf,
+          options.quality,
+          detection.watermarkCandidates
+        );
+        currentPath = searchablePdf;
+      } else if (useOcrFallback) {
         await updateProgress(jobId, {
           stage: 'running-ocr',
           message: 'Running OCR to build a searchable text layer…',
@@ -280,14 +341,14 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
             });
           }
         );
-        const searchablePdf = path.join(jobDir, 'searchable.pdf');
+        const searchablePdf = path.join(jobDir, 'searchable-ocr.pdf');
         await mergeSearchablePdfs(
           results.map((r) => r.searchablePdfPath),
           searchablePdf
         );
         currentPath = searchablePdf;
       } else {
-        // Build an image-only PDF from cleaned pages.
+        // Image-only (flattened) — explicit user choice to discard text.
         const imagePdf = path.join(jobDir, 'image.pdf');
         await buildImagePdf(
           cleanPages.map((p) => ({ path: p.path, width: p.width, height: p.height })),
