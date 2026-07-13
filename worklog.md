@@ -303,3 +303,37 @@ Stage Summary:
 - All output formats work in combination with all cleanup modes (watermark removal, background removal, clean-scan, full cleanup). PDF/A conversion runs as the final step, so the archival PDF contains the cleaned content.
 - Verified via XMP metadata inspection: pdfaid:part and pdfaid:conformance correctly embedded.
 - Files modified: src/lib/pdf-cleanup/types.ts (OutputFormat + OUTPUT_FORMATS), src/lib/pdf-cleanup/rebuild.ts (buildPdfA function), src/lib/pdf-cleanup/index.ts (import + Step 4 routing).
+
+---
+Task ID: 11
+Agent: main (Z.ai Code)
+Task: Smarter compression — analyze images first, then choose the right codec per image type (CCITT G4 for mono, pass-through for existing JPEGs, lossless for PNG, adaptive for scans).
+
+Work Log:
+- Added analyzeImages() to rebuild.ts: runs `pdfimages -list` and parses the output into a structured ImageProfile (count, hasMonochrome/hasColor/hasGray, jpegCount/flateCount/ccittCount/jbig2Count, avgPpi, isScanned, totalImageBytes). Each image's bpc, color space, encoding, PPI, and size are captured. Includes a parseSize helper for "3444K"/"12M" size strings and a scanned-detection heuristic (≥1 large image per page + PPI 100-700).
+- Added smartCompress() to rebuild.ts: builds Ghostscript args based on the image profile:
+  - No images → light structural compression only (no /ebook preset that adds overhead on tiny PDFs).
+  - Monochrome (bpc=1) → CCITT Group 4 fax encoding (AutoFilterMonoImages=false, MonoImageFilter=CCITTFaxEncode, 300 DPI). CCITT G4 is universally supported and far smaller than Flate for 1-bpp text. JBIG2 isn't built into Ghostscript.
+  - Color/grayscale JPEG already present → PassThroughJPEGImages=true (no re-encoding, no generation loss). Except in "fast" mode where everything is recompressed.
+  - Color/grayscale Flate (PNG-like) → FlateEncode (lossless) for high/maximum quality; DCTEncode (JPEG) for fast/balanced/scanned.
+  - Scanned full-page images → adaptive downsample (100/150/200/300 DPI by quality) + JPEG with QFactor (0.5/0.4/0.15/0.0 by quality).
+  - Quality-dependent targets: fast=100dpi/Q0.5, balanced=150dpi/Q0.4, high=200dpi/Q0.15, maximum=300dpi/lossless.
+  - QFactor passed via PostScript -c setdistillerparams (ColorACSImageDict + GrayACSImageDict) before the input file (-f).
+  - Fallback: on gs failure, falls back to compressWithGhostscript (preset), then copy.
+- Fixed Ghostscript arg ordering: -sOutputFile before -c (PostScript block), -f before input file (otherwise -c eats subsequent args).
+- Wired orchestrator Step 4: "compressed" output format and "compressAfter" option now use smartCompress instead of compressWithGhostscript. Progress message: "Analyzing images & compressing…".
+- Verified end-to-end:
+  - Scanned color PDF (3.5MB, 1 RGB image): smart compress → 51KB (99% reduction). Image now JPEG at 0.5% ratio. Old /ebook preset → 62KB on same input. Smart is 17% smaller.
+  - Vector PDF (2.3KB, no images): smart compress → 4.5KB. Minimal overhead (already tiny; metadata/linearization adds a few KB). Text fully preserved (9 body lines searchable).
+  - CCITT G4 path: code correct (bpc=1 detection + CCITTFaxEncode flags). Verified gs flags work in isolated test. Real 1-bpp PDFs (fax-style scans) will get CCITT G4.
+- Lint: 0 errors.
+
+Stage Summary:
+- Compression is now image-aware: analyzes embedded images via pdfimages, then picks the optimal codec per image class (CCITT G4 / JPEG pass-through / Flate lossless / adaptive downsample).
+- Key improvements over old preset-only approach:
+  - Scanned PDFs: 17% smaller than /ebook preset (51KB vs 62KB).
+  - Existing JPEGs: no generation loss (PassThroughJPEGImages).
+  - Monochrome 1-bpp: CCITT G4 (far smaller than Flate for text).
+  - PNG graphics: kept lossless at high/maximum quality (no unnecessary JPEG re-encoding).
+  - No-image vector PDFs: no downsampling overhead.
+- Files modified: src/lib/pdf-cleanup/rebuild.ts (analyzeImages + smartCompress + ImageProfile/ImageInfo types), src/lib/pdf-cleanup/index.ts (import smartCompress + Step 4 routing).

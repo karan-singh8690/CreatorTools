@@ -31,6 +31,7 @@ import {
   buildSearchablePdfWithOriginalText,
   mergeSearchablePdfs,
   compressWithGhostscript,
+  smartCompress,
   optimizeWithQpdf,
   buildPdfA,
   stripTextWatermarkFromVector,
@@ -431,11 +432,13 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
     } else if (options.compressAfter || options.outputFormat === 'compressed') {
       await updateProgress(jobId, {
         stage: 'optimizing',
-        message: 'Compressing output PDF…',
+        message: 'Analyzing images & compressing…',
         percent: 90,
       });
       const tmp = path.join(jobDir, 'compressed.pdf');
-      await compressWithGhostscript(currentPath, tmp, options.quality);
+      // Use smart image-aware compression: CCITT G4 for mono, pass-through
+      // for existing JPEGs, Flate for PNG, adaptive downsample for scans.
+      await smartCompress(currentPath, tmp, options.quality);
       await optimizeWithQpdf(tmp, finalPath);
     } else {
       await updateProgress(jobId, {

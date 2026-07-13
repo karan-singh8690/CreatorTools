@@ -1,0 +1,14 @@
+{
+  "id": "cln-mris6erk-24zt7g",
+  "createdAt": 1783920452672,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "test-mono.pdf",
+  "originalSizeBytes": 38925,
+  "originalPath": "/tmp/creatortools-cleanup/cleanup-1783920452673-9s3rvb/test-mono.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783920454545-hk099k/output.pdf",
+  "outputName": "test-mono-cleaned.pdf",
+  "outputSizeBytes": 27833,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mris6erk-24zt7g"
+}

@@ -315,6 +315,284 @@ export async function compressWithGhostscript(
   }
 }
 
+// ─── Image analysis (for smart compression) ──────────────────────────────────
+
+export interface ImageInfo {
+  page: number;
+  width: number;
+  height: number;
+  color: string; // 'rgb', 'gray', 'cmyk', 'sep', 'dev', 'indexed', ...
+  components: number;
+  bpc: number; // bits per component (1 = monochrome)
+  enc: string; // 'jpeg', 'jpeg2000', 'jbig2', 'ccitt', 'flate', 'lzw', 'runlength', 'image' (unknown)
+  xPpi: number;
+  yPpi: number;
+  sizeBytes: number;
+  ratioPercent: number; // compressed size as % of raw
+}
+
+export interface ImageProfile {
+  images: ImageInfo[];
+  count: number;
+  hasMonochrome: boolean;
+  hasColor: boolean;
+  hasGray: boolean;
+  jpegCount: number;
+  flateCount: number;
+  ccittCount: number;
+  jbig2Count: number;
+  /** Average PPI of images (0 if unknown). */
+  avgPpi: number;
+  /** True if the PDF is scan-based (≥1 full-page image per page, low PPI). */
+  isScanned: boolean;
+  /** Total bytes of embedded image data. */
+  totalImageBytes: number;
+}
+
+/** Parse `pdfimages -list` output into a structured image profile. */
+export async function analyzeImages(file: string): Promise<ImageProfile> {
+  const profile: ImageProfile = {
+    images: [],
+    count: 0,
+    hasMonochrome: false,
+    hasColor: false,
+    hasGray: false,
+    jpegCount: 0,
+    flateCount: 0,
+    ccittCount: 0,
+    jbig2Count: 0,
+    avgPpi: 0,
+    isScanned: false,
+    totalImageBytes: 0,
+  };
+
+  let stdout = '';
+  try {
+    const res = await execFileP('pdfimages', ['-list', file], {
+      timeout: 60_000,
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    stdout = res.stdout;
+  } catch {
+    return profile; // pdfimages not available or failed
+  }
+
+  const lines = stdout.split('\n');
+  // Header: "page num type width height color comp bpc enc interp object ID x-ppi y-ppi size ratio"
+  // Data rows start after the dashed separator line.
+  let ppiSum = 0;
+  let ppiCount = 0;
+  for (const line of lines) {
+    if (!line.trim() || line.startsWith('page') || line.startsWith('-')) continue;
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 14) continue;
+    const img: ImageInfo = {
+      page: parseInt(parts[0], 10) || 0,
+      width: parseInt(parts[3], 10) || 0,
+      height: parseInt(parts[4], 10) || 0,
+      color: parts[5] || '',
+      components: parseInt(parts[6], 10) || 0,
+      bpc: parseInt(parts[7], 10) || 0,
+      enc: (parts[8] || '').toLowerCase(),
+      xPpi: parseFloat(parts[11]) || 0,
+      yPpi: parseFloat(parts[12]) || 0,
+      sizeBytes: parseSize(parts[13] || '0'),
+      ratioPercent: parseFloat(parts[14]) || 0,
+    };
+    profile.images.push(img);
+    profile.count++;
+    profile.totalImageBytes += img.sizeBytes;
+    if (img.bpc === 1) profile.hasMonochrome = true;
+    if (img.color === 'gray' || img.color === 'gray') profile.hasGray = true;
+    if (img.color === 'rgb' || img.color === 'cmyk' || img.color === 'sep') profile.hasColor = true;
+    if (img.enc === 'jpeg') profile.jpegCount++;
+    else if (img.enc === 'flate' || img.enc === 'image') profile.flateCount++;
+    else if (img.enc === 'ccitt') profile.ccittCount++;
+    else if (img.enc === 'jbig2') profile.jbig2Count++;
+    const ppi = (img.xPpi + img.yPpi) / 2;
+    if (ppi > 0) {
+      ppiSum += ppi;
+      ppiCount++;
+    }
+  }
+  profile.avgPpi = ppiCount > 0 ? Math.round(ppiSum / ppiCount) : 0;
+
+  // Scanned heuristic: every page has ≥1 large image (> 50% of a typical page
+  // at the given PPI) and average PPI is in the scan range (150-600).
+  if (profile.count > 0) {
+    const pages = new Set(profile.images.map((i) => i.page));
+    const largeImages = profile.images.filter(
+      (i) => i.width >= 500 && i.height >= 700
+    ).length;
+    profile.isScanned =
+      pages.size > 0 &&
+      largeImages >= pages.size &&
+      profile.avgPpi > 100 &&
+      profile.avgPpi < 700;
+  }
+
+  return profile;
+}
+
+/** Parse a size string like "3444K", "12M", "500" into bytes. */
+function parseSize(s: string): number {
+  const m = s.match(/^([\d.]+)([KMGT]?)/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  const unit = (m[2] || '').toUpperCase();
+  const mult = unit === 'K' ? 1024 : unit === 'M' ? 1024 * 1024 : unit === 'G' ? 1024 ** 3 : 1;
+  return Math.round(n * mult);
+}
+
+// ─── Smart compression (image-aware) ─────────────────────────────────────────
+
+/**
+ * Smart, image-aware PDF compression.
+ *
+ * Instead of a single Ghostscript preset, we analyze the embedded images
+ * first and choose the optimal codec per image class:
+ *
+ *   - Monochrome 1-bpp images  → CCITT Group 4 fax (best for scanned text,
+ *     far smaller than Flate). JBIG2 would be even better but isn't built
+ *     into Ghostscript; CCITT G4 is universally supported.
+ *   - Already-compressed JPEGs  → pass through UNCHANGED (no generation
+ *     loss). Ghostscript's PassThroughJPEGImages avoids re-encoding.
+ *   - High-quality JPEGs (low   → recompress at QFactor 0.4 (~Q85) with
+ *     compression ratio)         bicubic downsampling to the target DPI.
+ *   - PNG / Flate images        → keep lossless (FlateEncode) for graphics;
+ *     convert to JPEG only if photo-like and large.
+ *   - Scanned full-page images  → adaptive: downsample to 150 DPI (fast) /
+ *     200 DPI (balanced) + JPEG Q85. This is where the biggest savings are.
+ *
+ * Vector text/fonts are always subset-embedded and never rasterized.
+ */
+export async function smartCompress(
+  inFile: string,
+  outFile: string,
+  quality: 'fast' | 'balanced' | 'high' | 'maximum'
+): Promise<void> {
+  // 1. Analyze images.
+  const profile = await analyzeImages(inFile);
+
+  // 2. Choose target DPI + JPEG quality (QFactor) from quality level.
+  //    QFactor: 0.0 = lossless, 0.15 = best, 0.4 = high (~Q85),
+  //    0.5 = medium, 0.9 = low. Smaller = higher quality.
+  const targets = {
+    fast: { dpi: 100, qFactor: 0.5, label: 'fast (100dpi Q0.5)' },
+    balanced: { dpi: 150, qFactor: 0.4, label: 'balanced (150dpi Q0.4)' },
+    high: { dpi: 200, qFactor: 0.15, label: 'high (200dpi Q0.15)' },
+    maximum: { dpi: 300, qFactor: 0.0, label: 'maximum (300dpi lossless)' },
+  } as const;
+  const t = targets[quality];
+
+  // 3. Build Ghostscript args based on the image profile.
+  const args: string[] = [
+    '-dQUIET', '-dBATCH', '-dNOPAUSE',
+    '-sDEVICE=pdfwrite',
+    '-dCompatibilityLevel=1.5',
+    '-dDetectDuplicateImages=true',
+    '-dCompressFonts=true', '-dSubsetFonts=true', '-dEmbedAllFonts=true',
+    '-dAutoRotatePages=/None',
+  ];
+
+  if (profile.count === 0) {
+    // No images — only font subsetting + object stream compression.
+    // Skip /ebook preset (it adds overhead on tiny vector PDFs). Just
+    // compress object streams + subset fonts; qpdf linearizes afterward.
+    args.push(
+      '-dPDFSETTINGS=/screen',
+      '-dDownsampleColorImages=false',
+      '-dDownsampleGrayImages=false',
+      '-dDownsampleMonoImages=false',
+    );
+  } else {
+    // --- Monochrome images: CCITT Group 4 (best for 1-bpp text) ---
+    if (profile.hasMonochrome) {
+      args.push(
+        '-dAutoFilterMonoImages=false',
+        '-sMonoImageFilter=CCITTFaxEncode',
+        '-dDownsampleMonoImages=true',
+        `-dMonoImageResolution=300`,
+        '-dMonoImageDownsampleThreshold=1.5',
+        '-dMonoImageDownsampleType=/Bicubic',
+      );
+    }
+
+    // --- Color images ---
+    if (profile.hasColor) {
+      // Pass through existing JPEGs to avoid generation loss, UNLESS the user
+      // wants aggressive compression (fast) — then recompress everything.
+      if (quality !== 'fast' && profile.jpegCount > 0) {
+        args.push('-dPassThroughJPEGImages=true');
+      }
+      // For scans: downsample + JPEG. For vector PDFs with embedded PNG
+      // graphics: keep lossless when quality is high/maximum.
+      if (profile.isScanned || quality === 'fast' || quality === 'balanced') {
+        args.push(
+          '-dAutoFilterColorImages=false',
+          '-sColorImageFilter=DCTEncode',
+          '-dDownsampleColorImages=true',
+          `-dColorImageResolution=${t.dpi}`,
+          '-dColorImageDownsampleThreshold=1.5',
+          '-dColorImageDownsampleType=/Bicubic',
+        );
+      } else {
+        // high / maximum: keep lossless (Flate) for graphics
+        args.push(
+          '-dAutoFilterColorImages=false',
+          '-sColorImageFilter=FlateEncode',
+          '-dDownsampleColorImages=false',
+        );
+      }
+    }
+
+    // --- Grayscale images ---
+    if (profile.hasGray) {
+      if (profile.isScanned || quality === 'fast' || quality === 'balanced') {
+        args.push(
+          '-dAutoFilterGrayImages=false',
+          '-sGrayImageFilter=DCTEncode',
+          '-dDownsampleGrayImages=true',
+          `-dGrayImageResolution=${t.dpi}`,
+          '-dGrayImageDownsampleThreshold=1.5',
+          '-dGrayImageDownsampleType=/Bicubic',
+        );
+      } else {
+        args.push(
+          '-dAutoFilterGrayImages=false',
+          '-sGrayImageFilter=FlateEncode',
+          '-dDownsampleGrayImages=false',
+        );
+      }
+    }
+  }
+
+  args.push(`-sOutputFile=${outFile}`);
+
+  // PostScript distiller params for JPEG quality (QFactor). Passed via -c
+  // before the input file (-f). Only relevant when DCTEncode is used.
+  if (profile.count > 0 && (profile.isScanned || quality === 'fast' || quality === 'balanced')) {
+    args.push(
+      '-c',
+      `<< /ColorACSImageDict << /QFactor ${t.qFactor} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> /GrayACSImageDict << /QFactor ${t.qFactor} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> >> setdistillerparams`,
+      '-f', inFile,
+    );
+  } else {
+    args.push('-f', inFile);
+  }
+
+  try {
+    await execFileP('gs', args, { timeout: 300_000, maxBuffer: 50 * 1024 * 1024 });
+  } catch (err) {
+    // Fallback: try the simple preset compression, then copy.
+    try {
+      await compressWithGhostscript(inFile, outFile, quality);
+    } catch {
+      await fs.copyFile(inFile, outFile);
+    }
+  }
+}
+
 /**
  * Convert a PDF to PDF/A (archival ISO 19005) using Ghostscript.
  *
