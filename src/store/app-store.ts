@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { loadSettings, formatDateWithFormat } from '@/hooks/use-settings'
 
-export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress' | 'qr-generator' | 'extract-text' | 'watermark' | 'security' | 'header-footer' | 'bates-number' | 'background' | 'crop' | 'sign' | 'settings'
+export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress' | 'qr-generator' | 'extract-text' | 'watermark' | 'security' | 'header-footer' | 'bates-number' | 'background' | 'crop' | 'sign' | 'cleanup' | 'settings'
 
 export interface PdfFile {
   id: string

@@ -1,0 +1,866 @@
+     1→import { create } from 'zustand'
+     2→import { loadSettings, formatDateWithFormat } from '@/hooks/use-settings'
+     3→
+     4→export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress' | 'qr-generator' | 'extract-text' | 'watermark' | 'security' | 'header-footer' | 'bates-number' | 'background' | 'crop' | 'sign' | 'settings'
+     5→
+     6→export interface PdfFile {
+     7→  id: string
+     8→  name: string
+     9→  originalName: string
+    10→  size: number
+    11→  mimeType: string
+    12→  pages: number
+    13→  starred: boolean
+    14→  textContent: string | null
+    15→  filePath: string
+    16→  // New production fields
+    17→  fileHash?: string | null
+    18→  uploadStatus?: string
+    19→  metadata?: string | null
+    20→  virusScanStatus?: string
+    21→  createdAt: string
+    22→  updatedAt: string
+    23→}
+    24→
+    25→export interface ChatMessage {
+    26→  id: string
+    27→  role: 'user' | 'assistant'
+    28→  content: string
+    29→  timestamp: Date
+    30→}
+    31→
+    32→export interface UploadProgress {
+    33→  fileName: string
+    34→  fileSize: number
+    35→  progress: number
+    36→  status: 'validating' | 'uploading' | 'success' | 'error' | 'duplicate'
+    37→  error?: string
+    38→  errorCode?: string
+    39→  duplicateInfo?: {
+    40→    id: string
+    41→    name: string
+    42→    originalName: string
+    43→    size: number
+    44→    pages: number
+    45→    createdAt: string
+    46→  }
+    47→  warnings?: { code: string; message: string }[]
+    48→}
+    49→
+    50→// Keep backward-compatible alias
+    51→export type PDFFile = PdfFile
+    52→
+    53→/** Format byte size to human-readable string (delegates to shared utility) */
+    54→export { formatStorageSize as formatFileSize } from '@/lib/bigint-utils'
+    55→
+    56→/** Format date string to human-readable relative/absolute time using user settings */
+    57→export function formatDate(dateStr: string): string {
+    58→  try {
+    59→    const settings = loadSettings()
+    60→    return formatDateWithFormat(dateStr, settings.dateFormat)
+    61→  } catch {
+    62→    // Fallback if localStorage isn't available
+    63→    return formatDateWithFormat(dateStr, 'MM/DD/YYYY')
+    64→  }
+    65→}
+    66→
+    67→// ─── Upload Configuration ────────────────────────────────────────────────────
+    68→
+    69→export const UPLOAD_LIMITS = {
+    70→  MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
+    71→  MAX_BATCH_SIZE: 20,
+    72→  ALLOWED_TYPES: ['application/pdf'],
+    73→  ALLOWED_EXTENSIONS: ['.pdf'],
+    74→  CHUNK_THRESHOLD: 20 * 1024 * 1024, // Files > 20MB use chunked upload
+    75→  CHUNK_SIZE: 5 * 1024 * 1024, // 5MB chunks
+    76→  MAX_CONCURRENT: 3,
+    77→} as const
+    78→
+    79→// ─── Client-side SHA256 (Web Crypto API) ─────────────────────────────────────
+    80→
+    81→export async function computeClientHash(file: File): Promise<string> {
+    82→  const buffer = await file.arrayBuffer()
+    83→  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+    84→  const hashArray = Array.from(new Uint8Array(hashBuffer))
+    85→  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+    86→}
+    87→
+    88→// ─── Upload with real progress using XMLHttpRequest ──────────────────────────
+    89→
+    90→function uploadWithProgress(
+    91→  file: File,
+    92→  onProgress: (progress: number) => void
+    93→): Promise<{ response: Response; data: any }> {
+    94→  return new Promise((resolve, reject) => {
+    95→    const xhr = new XMLHttpRequest()
+    96→    const formData = new FormData()
+    97→    formData.append('file', file)
+    98→
+    99→    xhr.upload.addEventListener('progress', (event) => {
+   100→      if (event.lengthComputable) {
+   101→        const percent = Math.round((event.loaded / event.total) * 100)
+   102→        onProgress(percent)
+   103→      }
+   104→    })
+   105→
+   106→    xhr.addEventListener('load', () => {
+   107→      const response = new Response(xhr.response, {
+   108→        status: xhr.status,
+   109→        statusText: xhr.statusText,
+   110→        headers: new Headers({
+   111→          'Content-Type': xhr.getResponseHeader('Content-Type') || 'application/json',
+   112→        }),
+   113→      })
+   114→
+   115→      let data: any
+   116→      try {
+   117→        data = JSON.parse(xhr.responseText)
+   118→      } catch {
+   119→        data = { error: 'Invalid response' }
+   120→      }
+   121→
+   122→      resolve({ response, data })
+   123→    })
+   124→
+   125→    xhr.addEventListener('error', () => {
+   126→      reject(new Error('Network error during upload'))
+   127→    })
+   128→
+   129→    xhr.addEventListener('abort', () => {
+   130→      reject(new Error('Upload was aborted'))
+   131→    })
+   132→
+   133→    xhr.open('POST', '/api/files')
+   134→    xhr.responseType = 'text'
+   135→    xhr.send(formData)
+   136→  })
+   137→}
+   138→
+   139→// ─── Chunked Upload for Large Files ──────────────────────────────────────────
+   140→
+   141→async function chunkedUploadWithProgress(
+   142→  file: File,
+   143→  fileHash: string,
+   144→  onProgress: (progress: number) => void
+   145→): Promise<{ data: any }> {
+   146→  const totalChunks = Math.ceil(file.size / UPLOAD_LIMITS.CHUNK_SIZE)
+   147→
+   148→  // Step 1: Init session
+   149→  const initResponse = await fetch('/api/files/chunk', {
+   150→    method: 'POST',
+   151→    headers: { 'Content-Type': 'application/json' },
+   152→    body: JSON.stringify({
+   153→      action: 'init',
+   154→      fileName: file.name,
+   155→      fileSize: file.size,
+   156→      totalChunks,
+   157→      fileHash,
+   158→    }),
+   159→  })
+   160→
+   161→  if (!initResponse.ok) {
+   162→    const errorData = await initResponse.json().catch(() => ({ error: 'Init failed' }))
+   163→    // Handle duplicate detection at init stage
+   164→    if (initResponse.status === 409) {
+   165→      throw Object.assign(new Error(errorData.error || 'Duplicate file'), {
+   166→        code: 'DUPLICATE_FILE',
+   167→        duplicate: errorData.duplicate,
+   168→      })
+   169→    }
+   170→    throw new Error(errorData.error || 'Failed to initialize chunked upload')
+   171→  }
+   172→
+   173→  const { sessionId } = await initResponse.json()
+   174→
+   175→  // Step 2: Upload chunks sequentially
+   176→  for (let i = 0; i < totalChunks; i++) {
+   177→    const start = i * UPLOAD_LIMITS.CHUNK_SIZE
+   178→    const end = Math.min(start + UPLOAD_LIMITS.CHUNK_SIZE, file.size)
+   179→    const chunk = file.slice(start, end)
+   180→
+   181→    const chunkFormData = new FormData()
+   182→    chunkFormData.append('sessionId', sessionId)
+   183→    chunkFormData.append('chunkIndex', String(i))
+   184→    chunkFormData.append('chunk', chunk)
+   185→
+   186→    const chunkResponse = await fetch('/api/files/chunk', {
+   187→      method: 'POST',
+   188→      body: chunkFormData,
+   189→    })
+   190→
+   191→    if (!chunkResponse.ok) {
+   192→      throw new Error(`Chunk ${i + 1}/${totalChunks} upload failed`)
+   193→    }
+   194→
+   195→    // Update progress: chunk progress + overall progress
+   196→    const chunkProgress = ((i + 1) / totalChunks) * 100
+   197→    onProgress(Math.round(chunkProgress))
+   198→  }
+   199→
+   200→  // Step 3: Complete upload
+   201→  const completeResponse = await fetch('/api/files/chunk', {
+   202→    method: 'POST',
+   203→    headers: { 'Content-Type': 'application/json' },
+   204→    body: JSON.stringify({ action: 'complete', sessionId }),
+   205→  })
+   206→
+   207→  if (!completeResponse.ok) {
+   208→    const errorData = await completeResponse.json().catch(() => ({ error: 'Complete failed' }))
+   209→    if (completeResponse.status === 409) {
+   210→      throw Object.assign(new Error(errorData.error || 'Duplicate file'), {
+   211→        code: 'DUPLICATE_FILE',
+   212→        duplicate: errorData.duplicate,
+   213→      })
+   214→    }
+   215→    if (completeResponse.status === 422) {
+   216→      throw Object.assign(new Error(errorData.error || 'Security threat'), {
+   217→        code: 'VIRUS_DETECTED',
+   218→        threats: errorData.threats,
+   219→      })
+   220→    }
+   221→    throw new Error(errorData.error || 'Failed to complete chunked upload')
+   222→  }
+   223→
+   224→  const data = await completeResponse.json()
+   225→  return { data }
+   226→}
+   227→
+   228→// ─── Store Interface ─────────────────────────────────────────────────────────
+   229→
+   230→interface AppState {
+   231→  // Navigation
+   232→  currentView: ViewType
+   233→  setCurrentView: (view: ViewType) => void
+   234→
+   235→  // Sidebar
+   236→  sidebarCollapsed: boolean
+   237→  setSidebarCollapsed: (collapsed: boolean) => void
+   238→  activeSidebarItem: string
+   239→  setActiveSidebarItem: (item: string) => void
+   240→
+   241→  // Mobile
+   242→  mobileMenuOpen: boolean
+   243→  setMobileMenuOpen: (open: boolean) => void
+   244→
+   245→  // Files
+   246→  recentFiles: PdfFile[]
+   247→  isLoadingFiles: boolean
+   248→  fetchFiles: (search?: string) => Promise<void>
+   249→  uploadFiles: (files: File[], onProgress?: (progresses: UploadProgress[]) => void) => Promise<PdfFile[]>
+   250→  toggleStar: (id: string) => Promise<void>
+   251→  deleteFile: (id: string) => Promise<void>
+   252→  renameFile: (id: string, name: string) => Promise<void>
+   253→  selectedFiles: string[]
+   254→  toggleFileSelection: (id: string) => void
+   255→
+   256→  // PDF Viewer
+   257→  selectedPdfFile: PdfFile | null
+   258→  setSelectedPdfFile: (file: PdfFile | null) => void
+   259→  pdfPage: number
+   260→  setPdfPage: (page: number) => void
+   261→  pdfTotalPages: number
+   262→  setPdfTotalPages: (pages: number) => void
+   263→
+   264→  // Chat
+   265→  chatMessages: ChatMessage[]
+   266→  addChatMessage: (message: ChatMessage) => void
+   267→  clearChatMessages: () => void
+   268→  isChatLoading: boolean
+   269→  setIsChatLoading: (loading: boolean) => void
+   270→
+   271→  // Combine Files
+   272→  combineFiles: PdfFile[]
+   273→  addCombineFile: (file: PdfFile) => void
+   274→  removeCombineFile: (id: string) => void
+   275→  combineSelectedFiles: () => Promise<PdfFile | null>
+   276→  isCombining: boolean
+   277→
+   278→  // Batch Print
+   279→  printFiles: PdfFile[]
+   280→  addPrintFile: (file: PdfFile) => void
+   281→  removePrintFile: (id: string) => void
+   282→
+   283→  // Compress
+   284→  compressFile: (id: string, preset?: 'high-quality' | 'balanced' | 'maximum') => Promise<{
+   285→    file: PdfFile
+   286→    compression: { originalSize: number; compressedSize: number; savedBytes: number; savedPercent: string }
+   287→    operations?: { type: string; description: string; savedBytes: number; itemsProcessed: number }[]
+   288→    durationMs?: number
+   289→    preset?: string
+   290→  } | null>
+   291→  compressFilePreview: (id: string) => Promise<{
+   292→    preview: { estimatedSavings: number; estimatedOutputSize: number; originalSize: number; breakdown: any; analysis: any }
+   293→    fileInfo: { id: string; name: string; size: number; pages: number }
+   294→  } | null>
+   295→  batchCompress: (fileIds: string[], preset: 'high-quality' | 'balanced' | 'maximum') => Promise<{
+   296→    results: any[]
+   297→    summary: { total: number; success: number; errors: number; totalSavedBytes: number; preset: string }
+   298→  } | null>
+   299→  isCompressing: boolean
+   300→  compressionProgress: { current: number; total: number; fileName: string } | null
+   301→
+   302→  // Search
+   303→  searchQuery: string
+   304→  setSearchQuery: (query: string) => void
+   305→
+   306→  // View mode
+   307→  viewMode: 'list' | 'grid'
+   308→  setViewMode: (mode: 'list' | 'grid') => void
+   309→
+   310→  // File filter
+   311→  fileFilter: 'all' | 'starred'
+   312→  setFileFilter: (filter: 'all' | 'starred') => void
+   313→}
+   314→
+   315→// Always initialize with false to avoid hydration mismatch.
+   316→// SettingsInitializer will apply the user's saved preference on the client after mount.
+   317→function getInitialSidebarCollapsed(): boolean {
+   318→  return false
+   319→}
+   320→
+   321→export const useAppStore = create<AppState>((set, get) => ({
+   322→  // Navigation
+   323→  currentView: 'home',
+   324→  setCurrentView: (view) => set({ currentView: view }),
+   325→
+   326→  // Sidebar — initialize from user settings
+   327→  sidebarCollapsed: getInitialSidebarCollapsed(),
+   328→  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+   329→  activeSidebarItem: 'recent-files',
+   330→  setActiveSidebarItem: (item) => set({ activeSidebarItem: item }),
+   331→
+   332→  // Mobile
+   333→  mobileMenuOpen: false,
+   334→  setMobileMenuOpen: (open) => set({ mobileMenuOpen: open }),
+   335→
+   336→  // Files
+   337→  recentFiles: [],
+   338→  isLoadingFiles: false,
+   339→  fetchFiles: async (search?: string) => {
+   340→    set({ isLoadingFiles: true })
+   341→    try {
+   342→      const params = new URLSearchParams()
+   343→      if (search) params.set('search', search)
+   344→      const response = await fetch(`/api/files?${params.toString()}`)
+   345→      if (!response.ok) throw new Error('Failed to fetch files')
+   346→      const data = await response.json()
+   347→      set({ recentFiles: data.files || [] })
+   348→    } catch (error) {
+   349→      console.error('Fetch files error:', error)
+   350→    } finally {
+   351→      set({ isLoadingFiles: false })
+   352→    }
+   353→  },
+   354→
+   355→  // ─── Enhanced Upload with Validation, Progress, Duplicate Detection ──────
+   356→  uploadFiles: async (files: File[], onProgress?: (progresses: UploadProgress[]) => void) => {
+   357→    // Initialize progress for all files
+   358→    const progresses: UploadProgress[] = files.map((f) => ({
+   359→      fileName: f.name,
+   360→      fileSize: f.size,
+   361→      progress: 0,
+   362→      status: 'validating' as const,
+   363→    }))
+   364→    onProgress?.(progresses)
+   365→
+   366→    const uploadedFiles: PdfFile[] = []
+   367→
+   368→    // ── Client-side pre-validation ────────────────────────────────────────
+   369→    for (let i = 0; i < files.length; i++) {
+   370→      const file = files[i]
+   371→
+   372→      // Check file extension
+   373→      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
+   374→      if (!UPLOAD_LIMITS.ALLOWED_EXTENSIONS.includes(ext)) {
+   375→        progresses[i] = {
+   376→          ...progresses[i],
+   377→          status: 'error',
+   378→          error: `Invalid file type. Only PDF files are accepted.`,
+   379→          errorCode: 'INVALID_EXTENSION',
+   380→        }
+   381→        onProgress?.([...progresses])
+   382→        continue
+   383→      }
+   384→
+   385→      // Check file size
+   386→      if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE) {
+   387→        progresses[i] = {
+   388→          ...progresses[i],
+   389→          status: 'error',
+   390→          error: `File size (${formatFileSize(file.size)}) exceeds limit (${formatFileSize(UPLOAD_LIMITS.MAX_FILE_SIZE)})`,
+   391→          errorCode: 'SIZE_EXCEEDED',
+   392→        }
+   393→        onProgress?.([...progresses])
+   394→        continue
+   395→      }
+   396→
+   397→      if (file.size < 100) {
+   398→        progresses[i] = {
+   399→          ...progresses[i],
+   400→          status: 'error',
+   401→          error: 'File is too small to be a valid PDF',
+   402→          errorCode: 'SIZE_TOO_SMALL',
+   403→        }
+   404→        onProgress?.([...progresses])
+   405→        continue
+   406→      }
+   407→    }
+   408→
+   409→    // ── Process files with concurrent uploads ─────────────────────────────
+   410→    const filesToUpload = files.filter((_, i) => progresses[i].status !== 'error')
+   411→    const results = new Map<number, { file?: PdfFile; error?: any }>()
+   412→
+   413→    // Process with limited concurrency
+   414→    const queue = [...filesToUpload.map((f, idx) => {
+   415→      const originalIndex = files.indexOf(f)
+   416→      return { file: f, originalIndex }
+   417→    })]
+   418→
+   419→    const processFile = async (item: { file: File; originalIndex: number }) => {
+   420→      const { file, originalIndex } = item
+   421→      const isLargeFile = file.size > UPLOAD_LIMITS.CHUNK_THRESHOLD
+   422→
+   423→      try {
+   424→        // Phase 1: Client-side hash for large files (pre-dup check)
+   425→        let clientHash: string | undefined
+   426→        if (isLargeFile) {
+   427→          progresses[originalIndex] = {
+   428→            ...progresses[originalIndex],
+   429→            progress: 5,
+   430→            status: 'validating' as const,
+   431→          }
+   432→          onProgress?.([...progresses])
+   433→
+   434→          clientHash = await computeClientHash(file)
+   435→
+   436→          // Pre-flight duplicate check for large files
+   437→          const checkResponse = await fetch(`/api/files/check-duplicate?hash=${clientHash}`)
+   438→          if (checkResponse.ok) {
+   439→            const checkData = await checkResponse.json()
+   440→            if (checkData.isDuplicate) {
+   441→              progresses[originalIndex] = {
+   442→                ...progresses[originalIndex],
+   443→                progress: 100,
+   444→                status: 'duplicate' as const,
+   445→                duplicateInfo: checkData.existingFile,
+   446→              }
+   447→              onProgress?.([...progresses])
+   448→              results.set(originalIndex, { error: { code: 'DUPLICATE_FILE', duplicate: checkData } })
+   449→              return
+   450→            }
+   451→          }
+   452→        }
+   453→
+   454→        // Phase 2: Upload
+   455→        progresses[originalIndex] = {
+   456→          ...progresses[originalIndex],
+   457→          progress: isLargeFile ? 10 : 0,
+   458→          status: 'uploading' as const,
+   459→        }
+   460→        onProgress?.([...progresses])
+   461→
+   462→        let data: any
+   463→
+   464→        if (isLargeFile && clientHash) {
+   465→          // Chunked upload for large files
+   466→          const result = await chunkedUploadWithProgress(file, clientHash, (p) => {
+   467→            // Map chunk progress to 10-95 range (leave 5% for post-processing)
+   468→            const mappedProgress = 10 + Math.round(p * 0.85)
+   469→            progresses[originalIndex] = {
+   470→              ...progresses[originalIndex],
+   471→              progress: mappedProgress,
+   472→            }
+   473→            onProgress?.([...progresses])
+   474→          })
+   475→          data = result.data
+   476→        } else {
+   477→          // Standard upload with real progress
+   478→          const result = await uploadWithProgress(file, (p) => {
+   479→            // Map XHR progress to 0-95 range
+   480→            const mappedProgress = Math.round(p * 0.95)
+   481→            progresses[originalIndex] = {
+   482→              ...progresses[originalIndex],
+   483→              progress: mappedProgress,
+   484→            }
+   485→            onProgress?.([...progresses])
+   486→          })
+   487→
+   488→          if (result.response.status === 409) {
+   489→            // Duplicate detected
+   490→            progresses[originalIndex] = {
+   491→              ...progresses[originalIndex],
+   492→              progress: 100,
+   493→              status: 'duplicate' as const,
+   494→              duplicateInfo: result.data.duplicate?.existingFile,
+   495→            }
+   496→            onProgress?.([...progresses])
+   497→            results.set(originalIndex, { error: { code: 'DUPLICATE_FILE', duplicate: result.data.duplicate } })
+   498→            return
+   499→          }
+   500→
+   501→          if (result.response.status === 422) {
+   502→            // Virus detected
+   503→            progresses[originalIndex] = {
+   504→              ...progresses[originalIndex],
+   505→              progress: 100,
+   506→              status: 'error' as const,
+   507→              error: result.data.error || 'Security threat detected',
+   508→              errorCode: 'VIRUS_DETECTED',
+   509→            }
+   510→            onProgress?.([...progresses])
+   511→            results.set(originalIndex, { error: { code: 'VIRUS_DETECTED' } })
+   512→            return
+   513→          }
+   514→
+   515→          if (!result.response.ok) {
+   516→            const errorMsg = result.data?.error || 'Upload failed'
+   517→            const errorCode = result.data?.code || 'UPLOAD_FAILED'
+   518→            throw Object.assign(new Error(errorMsg), { code: errorCode })
+   519→          }
+   520→
+   521→          data = result.data
+   522→        }
+   523→
+   524→        // Phase 3: Success
+   525→        progresses[originalIndex] = {
+   526→          ...progresses[originalIndex],
+   527→          progress: 100,
+   528→          status: 'success',
+   529→          warnings: data.warnings,
+   530→        }
+   531→        onProgress?.([...progresses])
+   532→
+   533→        results.set(originalIndex, { file: data.file })
+   534→      } catch (error: any) {
+   535→        const errorCode = error.code || 'UPLOAD_FAILED'
+   536→        const errorMessage = error.message || 'Upload failed'
+   537→
+   538→        // Check if this was a duplicate from chunked upload
+   539→        if (errorCode === 'DUPLICATE_FILE' && error.duplicate) {
+   540→          progresses[originalIndex] = {
+   541→            ...progresses[originalIndex],
+   542→            progress: 100,
+   543→            status: 'duplicate' as const,
+   544→            duplicateInfo: error.duplicate.existingFile,
+   545→          }
+   546→          onProgress?.([...progresses])
+   547→          results.set(originalIndex, { error: { code: 'DUPLICATE_FILE', duplicate: error.duplicate } })
+   548→          return
+   549→        }
+   550→
+   551→        progresses[originalIndex] = {
+   552→          ...progresses[originalIndex],
+   553→          progress: 100,
+   554→          status: 'error',
+   555→          error: errorMessage,
+   556→          errorCode,
+   557→        }
+   558→        onProgress?.([...progresses])
+   559→        results.set(originalIndex, { error })
+   560→      }
+   561→    }
+   562→
+   563→    // Run with limited concurrency
+   564→    const executing: Promise<void>[] = []
+   565→    for (const item of queue) {
+   566→      const p = processFile(item).then(() => {
+   567→        executing.splice(executing.indexOf(p), 1)
+   568→      })
+   569→      executing.push(p)
+   570→
+   571→      if (executing.length >= UPLOAD_LIMITS.MAX_CONCURRENT) {
+   572→        await Promise.race(executing)
+   573→      }
+   574→    }
+   575→    await Promise.all(executing)
+   576→
+   577→    // Collect successful uploads
+   578→    for (const [_, result] of results) {
+   579→      if (result.file) {
+   580→        uploadedFiles.push(result.file)
+   581→      }
+   582→    }
+   583→
+   584→    // Refresh file list after upload
+   585→    if (uploadedFiles.length > 0) {
+   586→      await get().fetchFiles()
+   587→    }
+   588→
+   589→    return uploadedFiles
+   590→  },
+   591→
+   592→  toggleStar: async (id: string) => {
+   593→    const file = get().recentFiles.find((f) => f.id === id)
+   594→    if (!file) return
+   595→
+   596→    // Optimistic update
+   597→    set({
+   598→      recentFiles: get().recentFiles.map((f) =>
+   599→        f.id === id ? { ...f, starred: !f.starred } : f
+   600→      ),
+   601→    })
+   602→
+   603→    try {
+   604→      const response = await fetch(`/api/files/${id}`, {
+   605→        method: 'PATCH',
+   606→        headers: { 'Content-Type': 'application/json' },
+   607→        body: JSON.stringify({ starred: !file.starred }),
+   608→      })
+   609→
+   610→      if (!response.ok) {
+   611→        // Revert on error
+   612→        set({
+   613→          recentFiles: get().recentFiles.map((f) =>
+   614→            f.id === id ? { ...f, starred: file.starred } : f
+   615→          ),
+   616→        })
+   617→        throw new Error('Failed to toggle star')
+   618→      }
+   619→
+   620→      const data = await response.json()
+   621→      set({
+   622→        recentFiles: get().recentFiles.map((f) =>
+   623→          f.id === id ? data.file : f
+   624→        ),
+   625→      })
+   626→    } catch (error) {
+   627→      console.error('Toggle star error:', error)
+   628→    }
+   629→  },
+   630→  deleteFile: async (id: string) => {
+   631→    // Optimistic update - removes file from ALL lists
+   632→    const previousFiles = get().recentFiles
+   633→    const previousCombine = get().combineFiles
+   634→    const previousPrint = get().printFiles
+   635→    set({
+   636→      recentFiles: previousFiles.filter((f) => f.id !== id),
+   637→      combineFiles: previousCombine.filter((f) => f.id !== id),
+   638→      printFiles: previousPrint.filter((f) => f.id !== id),
+   639→    })
+   640→
+   641→    try {
+   642→      const response = await fetch(`/api/files/${id}`, { method: 'DELETE' })
+   643→      if (!response.ok) {
+   644→        // Revert on error
+   645→        set({
+   646→          recentFiles: previousFiles,
+   647→          combineFiles: previousCombine,
+   648→          printFiles: previousPrint,
+   649→        })
+   650→        const errorData = await response.json().catch(() => ({ error: 'Delete failed' }))
+   651→        throw new Error(errorData.error || 'Failed to delete file')
+   652→      }
+   653→      // Refresh file list from server to ensure consistency
+   654→      await get().fetchFiles()
+   655→    } catch (error) {
+   656→      console.error('Delete file error:', error)
+   657→      throw error
+   658→    }
+   659→  },
+   660→  renameFile: async (id: string, name: string) => {
+   661→    // Optimistic update
+   662→    const previousFiles = get().recentFiles
+   663→    set({
+   664→      recentFiles: get().recentFiles.map((f) =>
+   665→        f.id === id ? { ...f, name } : f
+   666→      ),
+   667→    })
+   668→
+   669→    try {
+   670→      const response = await fetch(`/api/files/${id}`, {
+   671→        method: 'PATCH',
+   672→        headers: { 'Content-Type': 'application/json' },
+   673→        body: JSON.stringify({ name }),
+   674→      })
+   675→
+   676→      if (!response.ok) {
+   677→        set({ recentFiles: previousFiles })
+   678→        throw new Error('Failed to rename file')
+   679→      }
+   680→
+   681→      const data = await response.json()
+   682→      set({
+   683→        recentFiles: get().recentFiles.map((f) =>
+   684→          f.id === id ? data.file : f
+   685→        ),
+   686→      })
+   687→    } catch (error) {
+   688→      console.error('Rename file error:', error)
+   689→    }
+   690→  },
+   691→  selectedFiles: [],
+   692→  toggleFileSelection: (id) =>
+   693→    set((state) => ({
+   694→      selectedFiles: state.selectedFiles.includes(id)
+   695→        ? state.selectedFiles.filter((fid) => fid !== id)
+   696→        : [...state.selectedFiles, id],
+   697→    })),
+   698→
+   699→  // PDF Viewer
+   700→  selectedPdfFile: null,
+   701→  setSelectedPdfFile: (file) => set({ selectedPdfFile: file }),
+   702→  pdfPage: 1,
+   703→  setPdfPage: (page) => set({ pdfPage: page }),
+   704→  pdfTotalPages: 1,
+   705→  setPdfTotalPages: (pages) => set({ pdfTotalPages: pages }),
+   706→
+   707→  // Chat
+   708→  chatMessages: [
+   709→    {
+   710→      id: 'welcome',
+   711→      role: 'assistant',
+   712→      content: "Hello, I'm Luna, your AI assistant. How can I help you today?\n\nYou may ask:\n• Can you summarize the content of PDF?\n• What are the key points?",
+   713→      timestamp: new Date(),
+   714→    },
+   715→  ],
+   716→  addChatMessage: (message) =>
+   717→    set((state) => ({ chatMessages: [...state.chatMessages, message] })),
+   718→  clearChatMessages: () => set({ chatMessages: [] }),
+   719→  isChatLoading: false,
+   720→  setIsChatLoading: (loading) => set({ isChatLoading: loading }),
+   721→
+   722→  // Combine Files
+   723→  combineFiles: [],
+   724→  addCombineFile: (file) =>
+   725→    set((state) => ({ combineFiles: [...state.combineFiles, file] })),
+   726→  removeCombineFile: (id) =>
+   727→    set((state) => ({ combineFiles: state.combineFiles.filter((f) => f.id !== id) })),
+   728→  combineSelectedFiles: async () => {
+   729→    const { combineFiles } = get()
+   730→    if (combineFiles.length < 2) return null
+   731→
+   732→    set({ isCombining: true })
+   733→    try {
+   734→      const response = await fetch('/api/files/combine', {
+   735→        method: 'POST',
+   736→        headers: { 'Content-Type': 'application/json' },
+   737→        body: JSON.stringify({ fileIds: combineFiles.map((f) => f.id) }),
+   738→      })
+   739→
+   740→      if (!response.ok) {
+   741→        const errorData = await response.json().catch(() => ({ error: 'Combine failed' }))
+   742→        throw new Error(errorData.error || 'Combine failed')
+   743→      }
+   744→
+   745→      const data = await response.json()
+   746→
+   747→      // Refresh file list and clear combine list
+   748→      await get().fetchFiles()
+   749→      set({ combineFiles: [] })
+   750→
+   751→      return data.file as PdfFile
+   752→    } catch (error) {
+   753→      console.error('Combine files error:', error)
+   754→      return null
+   755→    } finally {
+   756→      set({ isCombining: false })
+   757→    }
+   758→  },
+   759→  isCombining: false,
+   760→
+   761→  // Batch Print
+   762→  printFiles: [],
+   763→  addPrintFile: (file) =>
+   764→    set((state) => ({ printFiles: [...state.printFiles, file] })),
+   765→  removePrintFile: (id) =>
+   766→    set((state) => ({ printFiles: state.printFiles.filter((f) => f.id !== id) })),
+   767→
+   768→  // Compress
+   769→  compressFile: async (id: string, preset: 'high-quality' | 'balanced' | 'maximum' = 'balanced') => {
+   770→    set({ isCompressing: true, compressionProgress: { current: 0, total: 1, fileName: 'Compressing...' } })
+   771→    try {
+   772→      const response = await fetch(`/api/files/${id}/compress`, {
+   773→        method: 'POST',
+   774→        headers: { 'Content-Type': 'application/json' },
+   775→        body: JSON.stringify({ preset }),
+   776→      })
+   777→
+   778→      if (!response.ok) {
+   779→        const errorData = await response.json().catch(() => ({ error: 'Compress failed' }))
+   780→        throw new Error(errorData.error || 'Compress failed')
+   781→      }
+   782→
+   783→      const data = await response.json()
+   784→
+   785→      // Refresh file list to include the new compressed file
+   786→      await get().fetchFiles()
+   787→
+   788→      return {
+   789→        file: data.file as PdfFile,
+   790→        compression: data.compression as {
+   791→          originalSize: number
+   792→          compressedSize: number
+   793→          savedBytes: number
+   794→          savedPercent: string
+   795→        },
+   796→        operations: data.operations,
+   797→        durationMs: data.durationMs,
+   798→        preset: data.preset,
+   799→      }
+   800→    } catch (error) {
+   801→      console.error('Compress file error:', error)
+   802→      return null
+   803→    } finally {
+   804→      set({ isCompressing: false, compressionProgress: null })
+   805→    }
+   806→  },
+   807→  compressFilePreview: async (id: string) => {
+   808→    try {
+   809→      const response = await fetch(`/api/files/${id}/compress?action=preview`)
+   810→      if (!response.ok) throw new Error('Preview failed')
+   811→      const data = await response.json()
+   812→      return data as {
+   813→        preview: { estimatedSavings: number; estimatedOutputSize: number; originalSize: number; breakdown: any; analysis: any }
+   814→        fileInfo: { id: string; name: string; size: number; pages: number }
+   815→      }
+   816→    } catch (error) {
+   817→      console.error('Compression preview error:', error)
+   818→      return null
+   819→    }
+   820→  },
+   821→  batchCompress: async (fileIds: string[], preset: 'high-quality' | 'balanced' | 'maximum' = 'balanced') => {
+   822→    set({ isCompressing: true, compressionProgress: { current: 0, total: fileIds.length, fileName: 'Batch compressing...' } })
+   823→    try {
+   824→      const response = await fetch('/api/files/compress-batch', {
+   825→        method: 'POST',
+   826→        headers: { 'Content-Type': 'application/json' },
+   827→        body: JSON.stringify({ fileIds, preset }),
+   828→      })
+   829→
+   830→      if (!response.ok) {
+   831→        const errorData = await response.json().catch(() => ({ error: 'Batch compress failed' }))
+   832→        throw new Error(errorData.error || 'Batch compress failed')
+   833→      }
+   834→
+   835→      const data = await response.json()
+   836→
+   837→      // Refresh file list
+   838→      await get().fetchFiles()
+   839→
+   840→      return data as {
+   841→        results: any[]
+   842→        summary: { total: number; success: number; errors: number; totalSavedBytes: number; preset: string }
+   843→      }
+   844→    } catch (error) {
+   845→      console.error('Batch compress error:', error)
+   846→      return null
+   847→    } finally {
+   848→      set({ isCompressing: false, compressionProgress: null })
+   849→    }
+   850→  },
+   851→  isCompressing: false,
+   852→  compressionProgress: null,
+   853→
+   854→  // Search
+   855→  searchQuery: '',
+   856→  setSearchQuery: (query) => set({ searchQuery: query }),
+   857→
+   858→  // View mode
+   859→  viewMode: 'list',
+   860→  setViewMode: (mode) => set({ viewMode: mode }),
+   861→
+   862→  // File filter
+   863→  fileFilter: 'all',
+   864→  setFileFilter: (filter) => set({ fileFilter: filter }),
+   865→}))
+   866→

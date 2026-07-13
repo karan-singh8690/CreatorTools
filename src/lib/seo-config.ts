@@ -859,6 +859,35 @@ export const toolsSEO: ToolSEO[] = [
       { question: 'Can I track how many people scan it?', answer: 'Standard QR codes don\'t have built-in tracking. Use a URL shortener (like Bitly) before creating the QR code for scan analytics.' },
     ],
   },
+  {
+    slug: 'remove-watermark-pdf',
+    viewId: 'cleanup',
+    title: 'Remove Watermark from PDF',
+    metaTitle: 'Remove Watermark from PDF Online Free - PDF Background Remover',
+    metaDescription: 'Remove watermarks, backgrounds, and scan artifacts from PDF files online for free. Detect & strip text, transparent, rotated & repeated logo watermarks. No signup required.',
+    keywords: ['remove watermark pdf', 'pdf watermark remover', 'remove background pdf', 'pdf cleanup', 'clean scanned pdf', 'pdf background remover', 'strip watermark pdf', 'delete watermark pdf'],
+    h1: 'Remove Watermark & Background from PDF',
+    subtitle: 'Automatically detect and remove text, transparent, rotated & repeated watermarks, colored backgrounds, and scan artifacts from any PDF.',
+    icon: 'Sparkles',
+    color: '#E11D48',
+    features: [
+      { title: 'Smart Watermark Detection', desc: 'Auto-detects text, transparent, rotated & repeated logo watermarks across all pages.' },
+      { title: 'Background Removal', desc: 'Strip colored backgrounds, gray paper, scanner shadows, and texture overlays.' },
+      { title: 'Scan Cleanup', desc: 'Denoise, threshold & sharpen scanned pages into clean white paper.' },
+      { title: 'Full AI Cleanup', desc: 'One-click mode removes watermarks, backgrounds, stamps & scan artifacts together.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Drag & drop or browse your PDF file (up to 500 MB, 1000 pages).' },
+      { step: 2, title: 'Choose Mode', desc: 'Pick watermark removal, background removal, scan cleanup, or full AI cleanup.' },
+      { step: 3, title: 'Preview & Download', desc: 'Compare before/after, then download your cleaned PDF instantly.' },
+    ],
+    faq: [
+      { question: 'Can it remove any watermark?', answer: 'Our tool detects and removes the most common watermark types: text, transparent, rotated, and repeated logo watermarks. Heavily flattened image-only watermarks may be partially removable.' },
+      { question: 'Will it affect the text or images in my PDF?', answer: 'No. The cleanup algorithms preserve text layers, vector content, and signatures while removing only the detected watermark/background layers.' },
+      { question: 'Is there a file size limit?', answer: 'Free users can clean files up to 500 MB and 1000 pages. Larger files should be split first.' },
+      { question: 'Are my files safe?', answer: 'Yes. Files are processed locally on the server and auto-deleted after a short TTL. We never share or sell your data.' },
+    ],
+  },
 ];
 
 // Helper to find tool by slug

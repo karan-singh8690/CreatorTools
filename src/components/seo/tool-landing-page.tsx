@@ -13,6 +13,7 @@ import {
   Shield,
   Zap,
   Star,
+  Sparkles,
 } from 'lucide-react'
 import { SITE_URL } from '@/lib/seo-config'
 import type { ToolSEO } from '@/lib/seo-config'
@@ -357,6 +358,7 @@ export function ToolLandingPage({ tool }: { tool: ToolSEO }) {
               { name: 'Convert PDF', slug: 'convert-pdf', icon: ArrowRight, color: '#8B5CF6' },
               { name: 'OCR PDF', slug: 'ocr-pdf', icon: Star, color: '#EC4899' },
               { name: 'Sign PDF', slug: 'sign-document-pdf', icon: Shield, color: '#D946EF' },
+              { name: 'Remove Watermark', slug: 'remove-watermark-pdf', icon: Sparkles, color: '#E11D48' },
             ]
               .filter((t) => t.slug !== tool.slug)
               .map((t) => (

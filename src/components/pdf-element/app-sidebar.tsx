@@ -27,6 +27,7 @@ import {
   Image,
   Crop,
   PenTool,
+  Sparkles,
   Settings,
   X,
 } from 'lucide-react'
@@ -55,6 +56,7 @@ const toolItems: ToolNavItem[] = [
   { id: 'background', label: 'Background', icon: Image, view: 'background' },
   { id: 'crop', label: 'Crop Pages', icon: Crop, view: 'crop' },
   { id: 'sign', label: 'Sign Document', icon: PenTool, view: 'sign' },
+  { id: 'cleanup', label: 'BG & Watermark Remover', icon: Sparkles, view: 'cleanup' },
   { id: 'security', label: 'Security', icon: Lock, view: 'security' },
   { id: 'convert', label: 'Convert PDF', icon: ArrowRightLeft, view: 'convert' },
   { id: 'ocr', label: 'OCR PDF', icon: ScanLine, view: 'ocr' },
@@ -75,6 +77,7 @@ function getActiveToolId(currentView: ViewType): string | null {
     background: 'background',
     crop: 'crop',
     sign: 'sign',
+    cleanup: 'cleanup',
     security: 'security',
     convert: 'convert',
     ocr: 'ocr',

@@ -25,6 +25,7 @@ import { BackgroundPdf } from '@/components/pdf-element/background-pdf'
 import { CropPdf } from '@/components/pdf-element/crop-pdf'
 import { SignPdf } from '@/components/pdf-element/sign-pdf'
 import { SettingsPage } from '@/components/pdf-element/settings-page'
+import { CleanupPdf } from '@/components/pdf-element/cleanup-pdf'
 import { motion } from 'framer-motion'
 
 import {
@@ -66,6 +67,7 @@ const popularTools = [
   { id: 'crop', label: 'Crop PDF', desc: 'Trim pages', icon: Crop, color: 'text-orange-600', bg: 'bg-orange-50', ring: 'ring-orange-500/20', view: 'crop' as ViewType },
   { id: 'header-footer', label: 'Header/Footer', desc: 'Add headers', icon: Heading, color: 'text-cyan-600', bg: 'bg-cyan-50', ring: 'ring-cyan-500/20', view: 'header-footer' as ViewType },
   { id: 'bates', label: 'Bates Number', desc: 'Page numbering', icon: Hash, color: 'text-slate-600', bg: 'bg-slate-50', ring: 'ring-slate-500/20', view: 'bates-number' as ViewType },
+  { id: 'cleanup', label: 'PDF Cleanup', desc: 'Remove watermarks', icon: Sparkles, color: 'text-rose-600', bg: 'bg-rose-50', ring: 'ring-rose-500/20', view: 'cleanup' as ViewType },
 ]
 
 const fadeUp = {
@@ -244,7 +246,7 @@ function HomeContent() {
         'home', 'all-tools', 'pdf-viewer', 'combine-files', 'batch-print',
         'convert', 'ocr', 'compress', 'qr-generator', 'extract-text',
         'watermark', 'security', 'header-footer', 'bates-number',
-        'background', 'crop', 'sign', 'settings',
+        'background', 'crop', 'sign', 'cleanup', 'settings',
       ]
       if (validViews.includes(tool as ViewType)) {
         setCurrentView(tool as ViewType)
@@ -286,6 +288,8 @@ function HomeContent() {
         return <CropPdf />
       case 'sign':
         return <SignPdf />
+      case 'cleanup':
+        return <CleanupPdf />
       case 'settings':
         return <SettingsPage />
       case 'qr-generator':

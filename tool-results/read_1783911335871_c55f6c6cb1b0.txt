@@ -1,0 +1,908 @@
+     1→'use client'
+     2→
+     3→import { useState, useCallback, useEffect } from 'react'
+     4→import { useAppStore, formatFileSize, formatDate, PdfFile } from '@/store/app-store'
+     5→import {
+     6→  X,
+     7→  FileText,
+     8→  FileDown,
+     9→  Loader2,
+    10→  Download,
+    11→  ArrowDown,
+    12→  CheckCircle2,
+    13→  TrendingDown,
+    14→  Eye,
+    15→  Zap,
+    16→  Layers,
+    17→  Image as ImageIcon,
+    18→  Type,
+    19→  Copy,
+    20→  BarChart3,
+    21→  Clock,
+    22→  Shield,
+    23→  ChevronRight,
+    24→} from 'lucide-react'
+    25→import { Button } from '@/components/ui/button'
+    26→import { Card, CardContent } from '@/components/ui/card'
+    27→import { Badge } from '@/components/ui/badge'
+    28→import { Separator } from '@/components/ui/separator'
+    29→import { Progress } from '@/components/ui/progress'
+    30→import { cn } from '@/lib/utils'
+    31→import { useToast } from '@/hooks/use-toast'
+    32→import { useToolHistory } from '@/hooks/use-tool-history'
+    33→import { ToolHistoryPanel } from '@/components/pdf-element/tool-history-panel'
+    34→
+    35→type CompressionPreset = 'high-quality' | 'balanced' | 'maximum'
+    36→
+    37→interface CompressionResult {
+    38→  file: PdfFile
+    39→  compression: {
+    40→    originalSize: number
+    41→    compressedSize: number
+    42→    savedBytes: number
+    43→    savedPercent: string
+    44→  }
+    45→  operations?: {
+    46→    type: string
+    47→    description: string
+    48→    savedBytes: number
+    49→    itemsProcessed: number
+    50→  }[]
+    51→  durationMs?: number
+    52→  preset?: string
+    53→}
+    54→
+    55→interface PreviewData {
+    56→  preview: {
+    57→    estimatedSavings: number
+    58→    estimatedOutputSize: number
+    59→    originalSize: number
+    60→    breakdown: {
+    61→      images: { count: number; estimatedSaving: number; totalBytes: number }
+    62→      metadata: { hasMetadata: boolean; estimatedSaving: number; totalBytes: number }
+    63→      duplicates: { estimatedSaving: number }
+    64→      objects: { estimatedSaving: number }
+    65→    }
+    66→    analysis: {
+    67→      imageCount: number
+    68→      hasMetadata: boolean
+    69→      pageCount: number
+    70→      estimatedObjectCount: number
+    71→      fontCount: number
+    72→      isLinearized: boolean
+    73→    }
+    74→  }
+    75→  fileInfo: { id: string; name: string; size: number; pages: number }
+    76→}
+    77→
+    78→const PRESET_CARDS: {
+    79→  id: CompressionPreset
+    80→  label: string
+    81→  description: string
+    82→  icon: React.ElementType
+    83→  color: string
+    84→  quality: string
+    85→  savings: string
+    86→}[] = [
+    87→  {
+    88→    id: 'high-quality',
+    89→    label: 'High Quality',
+    90→    description: 'Minimal compression, preserves original quality',
+    91→    icon: Shield,
+    92→    color: 'text-green-600 bg-green-50 border-green-200',
+    93→    quality: '85% JPEG',
+    94→    savings: '~10-20%',
+    95→  },
+    96→  {
+    97→    id: 'balanced',
+    98→    label: 'Balanced',
+    99→    description: 'Good compression with acceptable quality',
+   100→    icon: Zap,
+   101→    color: 'text-[#4A90D9] bg-[#4A90D9]/5 border-[#4A90D9]/20',
+   102→    quality: '65% JPEG',
+   103→    savings: '~30-50%',
+   104→  },
+   105→  {
+   106→    id: 'maximum',
+   107→    label: 'Maximum',
+   108→    description: 'Aggressive compression, noticeable quality loss',
+   109→    icon: TrendingDown,
+   110→    color: 'text-orange-600 bg-orange-50 border-orange-200',
+   111→    quality: '40% JPEG',
+   112→    savings: '~50-70%',
+   113→  },
+   114→]
+   115→
+   116→// ─── Batch Mode ──────────────────────────────────────────────────────────────
+   117→
+   118→function BatchCompressView({ onBack, addHistory }: { onBack: () => void; addHistory: (summary: string, details?: Record<string, any>, status?: 'success' | 'error' | 'partial') => void }) {
+   119→  const { recentFiles, batchCompress, isCompressing, compressionProgress } = useAppStore()
+   120→  const { toast } = useToast()
+   121→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+   122→  const [preset, setPreset] = useState<CompressionPreset>('balanced')
+   123→  const [results, setResults] = useState<any>(null)
+   124→
+   125→  const toggleFile = (id: string) => {
+   126→    setSelectedIds((prev) => {
+   127→      const next = new Set(prev)
+   128→      if (next.has(id)) next.delete(id)
+   129→      else next.add(id)
+   130→      return next
+   131→    })
+   132→  }
+   133→
+   134→  const handleBatchCompress = async () => {
+   135→    if (selectedIds.size === 0) return
+   136→    const result = await batchCompress(Array.from(selectedIds), preset)
+   137→    if (result) {
+   138→      setResults(result)
+   139→      addHistory(
+   140→        `Batch compressed ${result.summary.success} files — saved ${formatFileSize(result.summary.totalSavedBytes)}`,
+   141→        {
+   142→          fileCount: result.summary.success,
+   143→          totalSavedBytes: result.summary.totalSavedBytes,
+   144→          errors: result.summary.errors,
+   145→          preset: preset,
+   146→        },
+   147→        result.summary.errors > 0 ? 'partial' : 'success'
+   148→      )
+   149→      toast({
+   150→        title: 'Batch Compression Complete',
+   151→        description: `${result.summary.success} files compressed, saved ${formatFileSize(result.summary.totalSavedBytes)}`,
+   152→      })
+   153→    }
+   154→  }
+   155→
+   156→  return (
+   157→    <div className="space-y-4">
+   158→      <div className="flex items-center justify-between">
+   159→        <div>
+   160→          <h3 className="text-sm font-semibold text-gray-900">Batch Compress</h3>
+   161→          <p className="text-xs text-gray-400">Select multiple files to compress at once</p>
+   162→        </div>
+   163→        <div className="flex items-center gap-2">
+   164→          <Button variant="outline" size="sm" className="text-xs" onClick={onBack}>
+   165→            Single File Mode
+   166→          </Button>
+   167→        </div>
+   168→      </div>
+   169→
+   170→      {/* Preset selector */}
+   171→      <div className="grid grid-cols-3 gap-2">
+   172→        {PRESET_CARDS.map((p) => (
+   173→          <button
+   174→            key={p.id}
+   175→            onClick={() => setPreset(p.id)}
+   176→            className={cn(
+   177→              'p-3 rounded-lg border-2 text-left transition-all',
+   178→              preset === p.id ? 'border-[#4A90D9] shadow-sm' : 'border-gray-100 hover:border-gray-200'
+   179→            )}
+   180→          >
+   181→            <p className="text-xs font-medium text-gray-800">{p.label}</p>
+   182→            <p className="text-[10px] text-gray-400 mt-0.5">{p.quality} · {p.savings}</p>
+   183→          </button>
+   184→        ))}
+   185→      </div>
+   186→
+   187→      {/* File list */}
+   188→      <div className="space-y-1.5 max-h-64 overflow-y-auto">
+   189→        {recentFiles.map((file) => (
+   190→          <button
+   191→            key={file.id}
+   192→            onClick={() => toggleFile(file.id)}
+   193→            className={cn(
+   194→              'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left',
+   195→              selectedIds.has(file.id) ? 'border-[#4A90D9] bg-[#4A90D9]/5' : 'border-gray-100 hover:border-gray-200'
+   196→            )}
+   197→          >
+   198→            <div className={cn(
+   199→              'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0',
+   200→              selectedIds.has(file.id) ? 'border-[#4A90D9] bg-[#4A90D9]' : 'border-gray-300'
+   201→            )}>
+   202→              {selectedIds.has(file.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+   203→            </div>
+   204→            <FileText className="w-4 h-4 text-gray-400 shrink-0" />
+   205→            <div className="flex-1 min-w-0">
+   206→              <p className="text-xs font-medium text-gray-700 truncate">{file.name}</p>
+   207→            </div>
+   208→            <span className="text-[10px] text-gray-400 shrink-0">{formatFileSize(file.size)}</span>
+   209→          </button>
+   210→        ))}
+   211→      </div>
+   212→
+   213→      {results ? (
+   214→        <Card className="border-green-200 bg-green-50/50">
+   215→          <CardContent className="p-4">
+   216→            <div className="flex items-center gap-2 mb-2">
+   217→              <CheckCircle2 className="w-4 h-4 text-green-600" />
+   218→              <span className="text-sm font-medium text-green-800">Batch Complete</span>
+   219→            </div>
+   220→            <div className="grid grid-cols-3 gap-3 text-center">
+   221→              <div>
+   222→                <p className="text-lg font-bold text-green-600">{results.summary.success}</p>
+   223→                <p className="text-[10px] text-gray-500">Compressed</p>
+   224→              </div>
+   225→              <div>
+   226→                <p className="text-lg font-bold text-gray-800">{formatFileSize(results.summary.totalSavedBytes)}</p>
+   227→                <p className="text-[10px] text-gray-500">Total Saved</p>
+   228→              </div>
+   229→              <div>
+   230→                <p className="text-lg font-bold text-red-500">{results.summary.errors}</p>
+   231→                <p className="text-[10px] text-gray-500">Failed</p>
+   232→              </div>
+   233→            </div>
+   234→            <Button variant="outline" size="sm" className="w-full mt-3 text-xs" onClick={() => setResults(null)}>
+   235→              Compress More
+   236→            </Button>
+   237→          </CardContent>
+   238→        </Card>
+   239→      ) : (
+   240→        <Button
+   241→          className="w-full bg-green-600 hover:bg-green-700 text-white"
+   242→          disabled={selectedIds.size === 0 || isCompressing}
+   243→          onClick={handleBatchCompress}
+   244→        >
+   245→          {isCompressing ? (
+   246→            <>
+   247→              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   248→              Compressing {compressionProgress?.current || 0}/{compressionProgress?.total || selectedIds.size}...
+   249→            </>
+   250→          ) : (
+   251→            <>
+   252→              <ArrowDown className="w-4 h-4 mr-2" />
+   253→              Compress {selectedIds.size} File{selectedIds.size !== 1 ? 's' : ''}
+   254→            </>
+   255→          )}
+   256→        </Button>
+   257→      )}
+   258→    </div>
+   259→  )
+   260→}
+   261→
+   262→// ─── Main Component ──────────────────────────────────────────────────────────
+   263→
+   264→export function CompressPdf() {
+   265→  const {
+   266→    recentFiles,
+   267→    compressFile,
+   268→    compressFilePreview,
+   269→    isCompressing,
+   270→    compressionProgress,
+   271→    setCurrentView,
+   272→  } = useAppStore()
+   273→
+   274→  const { toast } = useToast()
+   275→  const { history, addHistory, deleteItem, clearHistory, isLoaded } = useToolHistory('compress', 'Compress PDF')
+   276→
+   277→  const [selectedFile, setSelectedFile] = useState<PdfFile | null>(null)
+   278→  const [compressionPreset, setCompressionPreset] = useState<CompressionPreset>('balanced')
+   279→  const [result, setResult] = useState<CompressionResult | null>(null)
+   280→  const [preview, setPreview] = useState<PreviewData | null>(null)
+   281→  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+   282→  const [isBatchMode, setIsBatchMode] = useState(false)
+   283→
+   284→  // Fetch preview when file changes
+   285→  useEffect(() => {
+   286→    if (!selectedFile) return
+   287→
+   288→    let cancelled = false
+   289→    const fetchPreview = async () => {
+   290→      setIsLoadingPreview(true)
+   291→      const data = await compressFilePreview(selectedFile.id)
+   292→      if (!cancelled) {
+   293→        setPreview(data || null)
+   294→        setIsLoadingPreview(false)
+   295→      }
+   296→    }
+   297→
+   298→    fetchPreview()
+   299→    return () => { cancelled = true }
+   300→  }, [selectedFile?.id, compressFilePreview])
+   301→
+   302→  const handleCompress = useCallback(async () => {
+   303→    if (!selectedFile) return
+   304→
+   305→    setResult(null)
+   306→    const response = await compressFile(selectedFile.id, compressionPreset)
+   307→
+   308→    if (response) {
+   309→      setResult(response)
+   310→      addHistory(
+   311→        `Compressed ${selectedFile.name} — saved ${response.compression.savedPercent}%`,
+   312→        {
+   313→          fileName: selectedFile.name,
+   314→          fileSize: selectedFile.size,
+   315→          originalSize: response.compression.originalSize,
+   316→          compressedSize: response.compression.compressedSize,
+   317→          savedPercent: response.compression.savedPercent,
+   318→          savedBytes: response.compression.savedBytes,
+   319→          preset: compressionPreset,
+   320→          pages: selectedFile.pages,
+   321→        },
+   322→        'success'
+   323→      )
+   324→      toast({
+   325→        title: 'Compression Complete',
+   326→        description: `Saved ${response.compression.savedPercent}% — ${formatFileSize(response.compression.savedBytes)} reduced in ${response.durationMs ? (response.durationMs / 1000).toFixed(1) + 's' : 'a moment'}`,
+   327→      })
+   328→    } else {
+   329→      toast({
+   330→        title: 'Compression Failed',
+   331→        description: 'Failed to compress the PDF file. Please try again.',
+   332→        variant: 'destructive',
+   333→      })
+   334→    }
+   335→  }, [selectedFile, compressionPreset, compressFile, toast, addHistory])
+   336→
+   337→  const handleDownload = useCallback(() => {
+   338→    if (!result) return
+   339→    fetch(`/api/files/${result.file.id}/download?download=1`)
+   340→      .then((response) => {
+   341→        if (!response.ok) throw new Error('Download failed')
+   342→        return response.blob()
+   343→      })
+   344→      .then((blob) => {
+   345→        const url = window.URL.createObjectURL(blob)
+   346→        const a = document.createElement('a')
+   347→        a.href = url
+   348→        a.download = result.file.name
+   349→        document.body.appendChild(a)
+   350→        a.click()
+   351→        document.body.removeChild(a)
+   352→        window.URL.revokeObjectURL(url)
+   353→      })
+   354→      .catch((err) => {
+   355→        console.error('Download error:', err)
+   356→        toast({ title: 'Download Failed', variant: 'destructive' })
+   357→      })
+   358→
+   359→    toast({ title: 'Download Started', description: `Downloading ${result.file.name}` })
+   360→  }, [result, toast])
+   361→
+   362→  const savedPercentNum = result ? parseFloat(result.compression.savedPercent) : 0
+   363→  const compressionRatio = result ? (result.compression.compressedSize / result.compression.originalSize) * 100 : 100
+   364→
+   365→  if (isBatchMode) {
+   366→    return (
+   367→      <div className="h-full flex flex-col">
+   368→        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-white">
+   369→          <div className="flex items-center gap-3">
+   370→            <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
+   371→              <FileDown className="w-4 h-4 text-green-600" />
+   372→            </div>
+   373→            <div>
+   374→              <h1 className="text-base md:text-lg font-semibold text-gray-800">Batch Compress PDFs</h1>
+   375→              <p className="text-xs text-gray-400">Reduce multiple files at once</p>
+   376→            </div>
+   377→          </div>
+   378→          <button onClick={() => setCurrentView('home')} className="p-2 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+   379→            <X className="w-5 h-5" />
+   380→          </button>
+   381→        </div>
+   382→        <div className="p-4 md:p-6 md:flex-1 md:min-h-0 md:overflow-auto pb-4 md:pb-0">
+   383→          <BatchCompressView onBack={() => setIsBatchMode(false)} addHistory={addHistory} />
+   384→        </div>
+   385→      </div>
+   386→    )
+   387→  }
+   388→
+   389→  return (
+   390→    <div className="h-full flex flex-col">
+   391→      {/* Header */}
+   392→      <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-white">
+   393→        <div className="flex items-center gap-3">
+   394→          <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
+   395→            <FileDown className="w-4 h-4 text-green-600" />
+   396→          </div>
+   397→          <div>
+   398→            <h1 className="text-base md:text-lg font-semibold text-gray-800">Compress PDF</h1>
+   399→            <p className="text-xs text-gray-400">Reduce PDF file size for easier sharing</p>
+   400→          </div>
+   401→        </div>
+   402→        <div className="flex items-center gap-2">
+   403→          <Button variant="outline" size="sm" className="text-xs" onClick={() => setIsBatchMode(true)}>
+   404→            <Layers className="w-3.5 h-3.5 mr-1" />
+   405→            Batch Mode
+   406→          </Button>
+   407→          <button onClick={() => setCurrentView('home')} className="p-2 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+   408→            <X className="w-5 h-5" />
+   409→          </button>
+   410→        </div>
+   411→      </div>
+   412→
+   413→      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-y-auto md:overflow-y-hidden">
+   414→        {/* Main Content */}
+   415→        <div className="p-4 md:p-6 md:flex-1 md:min-h-0 md:overflow-auto pb-4 md:pb-0">
+   416→          {!selectedFile ? (
+   417→            /* File Selection */
+   418→            <div>
+   419→              <h3 className="text-sm font-medium text-gray-600 mb-3">Select a file to compress</h3>
+   420→              {recentFiles.length > 0 ? (
+   421→                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   422→                  {recentFiles.map((file) => (
+   423→                    <button
+   424→                      key={file.id}
+   425→                      onClick={() => { setSelectedFile(file); setResult(null) }}
+   426→                      className="flex items-start gap-3 p-4 bg-white rounded-lg border border-gray-100 hover:border-green-400 hover:shadow-md transition-all text-left group"
+   427→                    >
+   428→                      <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
+   429→                        <FileText className="w-5 h-5 text-green-600" />
+   430→                      </div>
+   431→                      <div className="min-w-0 flex-1">
+   432→                        <div className="text-sm font-medium text-gray-800 group-hover:text-green-600 truncate">{file.name}</div>
+   433→                        <div className="text-xs text-gray-400 mt-1">{formatFileSize(file.size)} · {file.pages} page{file.pages !== 1 ? 's' : ''}</div>
+   434→                        <div className="text-[11px] text-gray-300 mt-0.5">{formatDate(file.updatedAt)}</div>
+   435→                      </div>
+   436→                    </button>
+   437→                  ))}
+   438→                </div>
+   439→              ) : (
+   440→                <div className="flex flex-col items-center justify-center py-16 text-gray-400 bg-white rounded-lg border border-dashed border-gray-300">
+   441→                  <FileDown className="w-12 h-12 mb-3 text-gray-300" />
+   442→                  <p className="text-sm mb-2">No files available</p>
+   443→                  <p className="text-xs text-gray-300">Upload a PDF file first to compress it</p>
+   444→                </div>
+   445→              )}
+   446→            </div>
+   447→          ) : (
+   448→            <div className="space-y-4">
+   449→              {/* Selected File Info */}
+   450→              <Card className="border-gray-200">
+   451→                <CardContent className="p-4">
+   452→                  <div className="flex items-center justify-between">
+   453→                    <div className="flex items-center gap-3">
+   454→                      <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
+   455→                        <FileText className="w-5 h-5 text-green-600" />
+   456→                      </div>
+   457→                      <div>
+   458→                        <div className="text-sm font-medium text-gray-800">{selectedFile.name}</div>
+   459→                        <div className="text-xs text-gray-400 mt-0.5">
+   460→                          {formatFileSize(selectedFile.size)} · {selectedFile.pages} page{selectedFile.pages !== 1 ? 's' : ''}
+   461→                        </div>
+   462→                      </div>
+   463→                    </div>
+   464→                    <Button variant="ghost" size="sm" className="text-xs text-gray-500 hover:text-gray-700" onClick={() => { setSelectedFile(null); setResult(null); setPreview(null) }}>
+   465→                      Change File
+   466→                    </Button>
+   467→                  </div>
+   468→                </CardContent>
+   469→              </Card>
+   470→
+   471→              {/* Compression Preview */}
+   472→              {preview && !result && (
+   473→                <Card className="border-[#4A90D9]/20 bg-[#4A90D9]/5">
+   474→                  <CardContent className="p-4">
+   475→                    <div className="flex items-center gap-2 mb-3">
+   476→                      <Eye className="w-4 h-4 text-[#4A90D9]" />
+   477→                      <h4 className="text-sm font-medium text-[#4A90D9]">Compression Preview</h4>
+   478→                    </div>
+   479→                    <div className="grid grid-cols-2 gap-4">
+   480→                      <div className="space-y-2">
+   481→                        <div className="flex items-center justify-between">
+   482→                          <span className="text-xs text-gray-600">Estimated Savings</span>
+   483→                          <span className="text-sm font-bold text-[#4A90D9]">~{preview.preview.estimatedSavings}%</span>
+   484→                        </div>
+   485→                        <div className="flex items-center justify-between">
+   486→                          <span className="text-xs text-gray-600">Est. Output Size</span>
+   487→                          <span className="text-xs font-medium text-gray-800">{formatFileSize(preview.preview.estimatedOutputSize)}</span>
+   488→                        </div>
+   489→                      </div>
+   490→                      <div className="space-y-1.5">
+   491→                        {preview.preview.analysis.imageCount > 0 && (
+   492→                          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+   493→                            <ImageIcon className="w-3 h-3 text-green-500" />
+   494→                            {preview.preview.analysis.imageCount} images ({formatFileSize(preview.preview.breakdown.images.totalBytes)})
+   495→                          </div>
+   496→                        )}
+   497→                        {preview.preview.analysis.hasMetadata && (
+   498→                          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+   499→                            <Type className="w-3 h-3 text-amber-500" />
+   500→                            Metadata detected
+   501→                          </div>
+   502→                        )}
+   503→                        <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+   504→                          <Copy className="w-3 h-3 text-[#4A90D9]" />
+   505→                          {preview.preview.analysis.estimatedObjectCount} objects
+   506→                        </div>
+   507→                      </div>
+   508→                    </div>
+   509→                  </CardContent>
+   510→                </Card>
+   511→              )}
+   512→
+   513→              {isLoadingPreview && !preview && !result && (
+   514→                <Card className="border-gray-200">
+   515→                  <CardContent className="p-4 flex items-center gap-2">
+   516→                    <Loader2 className="w-4 h-4 text-[#4A90D9] animate-spin" />
+   517→                    <span className="text-xs text-gray-500">Analyzing compression potential...</span>
+   518→                  </CardContent>
+   519→                </Card>
+   520→              )}
+   521→
+   522→              {/* Compression Result */}
+   523→              {result && (
+   524→                <div className="space-y-4">
+   525→                  {/* Success Banner */}
+   526→                  <Card className={cn(
+   527→                    'border-2',
+   528→                    savedPercentNum > 0 ? 'border-green-200 bg-green-50/50' : 'border-gray-200 bg-gray-50/50'
+   529→                  )}>
+   530→                    <CardContent className="p-4">
+   531→                      <div className="flex items-center gap-3">
+   532→                        {savedPercentNum > 0 ? (
+   533→                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+   534→                        ) : (
+   535→                          <Shield className="w-5 h-5 text-gray-500 shrink-0" />
+   536→                        )}
+   537→                        <div>
+   538→                          <p className="text-sm font-medium text-gray-800">
+   539→                            {savedPercentNum > 0 ? 'Compression Successful' : 'Already Optimized'}
+   540→                          </p>
+   541→                          <p className="text-xs text-gray-500 mt-0.5">
+   542→                            {savedPercentNum > 0
+   543→                              ? `Reduced by ${result.compression.savedPercent}% — saved ${formatFileSize(result.compression.savedBytes)}`
+   544→                              : 'This file is already optimally compressed. No further savings possible.'}
+   545→                          </p>
+   546→                        </div>
+   547→                        {result.durationMs && (
+   548→                          <Badge variant="outline" className="text-[10px] ml-auto shrink-0">
+   549→                            <Clock className="w-3 h-3 mr-1" />
+   550→                            {(result.durationMs / 1000).toFixed(1)}s
+   551→                          </Badge>
+   552→                        )}
+   553→                      </div>
+   554→                    </CardContent>
+   555→                  </Card>
+   556→
+   557→                  {/* Size Comparison */}
+   558→                  <Card className="border-gray-200">
+   559→                    <CardContent className="p-5 space-y-4">
+   560→                      <h4 className="text-sm font-medium text-gray-700">Before & After Comparison</h4>
+   561→
+   562→                      {/* Before */}
+   563→                      <div className="space-y-1.5">
+   564→                        <div className="flex items-center justify-between text-xs">
+   565→                          <span className="text-gray-500 flex items-center gap-1">
+   566→                            <FileText className="w-3 h-3" /> Before
+   567→                          </span>
+   568→                          <span className="font-medium text-gray-700">{formatFileSize(result.compression.originalSize)}</span>
+   569→                        </div>
+   570→                        <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+   571→                          <div className="h-full bg-gray-300 rounded-full" style={{ width: '100%' }} />
+   572→                        </div>
+   573→                      </div>
+   574→
+   575→                      {/* After */}
+   576→                      <div className="space-y-1.5">
+   577→                        <div className="flex items-center justify-between text-xs">
+   578→                          <span className="text-green-600 flex items-center gap-1">
+   579→                            <FileDown className="w-3 h-3" /> After
+   580→                          </span>
+   581→                          <span className="font-medium text-green-600">{formatFileSize(result.compression.compressedSize)}</span>
+   582→                        </div>
+   583→                        <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+   584→                          <div className="h-full bg-green-500 rounded-full transition-all duration-700" style={{ width: `${compressionRatio}%` }} />
+   585→                        </div>
+   586→                      </div>
+   587→
+   588→                      <Separator />
+   589→
+   590→                      {/* Summary Stats */}
+   591→                      <div className="grid grid-cols-3 gap-4">
+   592→                        <div className="text-center">
+   593→                          <div className="text-lg font-bold text-green-600">{result.compression.savedPercent}%</div>
+   594→                          <div className="text-[10px] text-gray-400 mt-0.5">Space Saved</div>
+   595→                        </div>
+   596→                        <div className="text-center">
+   597→                          <div className="text-lg font-bold text-gray-800">{formatFileSize(result.compression.savedBytes)}</div>
+   598→                          <div className="text-[10px] text-gray-400 mt-0.5">Bytes Saved</div>
+   599→                        </div>
+   600→                        <div className="text-center">
+   601→                          <div className="text-lg font-bold text-gray-800">{formatFileSize(result.compression.compressedSize)}</div>
+   602→                          <div className="text-[10px] text-gray-400 mt-0.5">Final Size</div>
+   603→                        </div>
+   604→                      </div>
+   605→                    </CardContent>
+   606→                  </Card>
+   607→
+   608→                  {/* Operations Breakdown */}
+   609→                  {result.operations && result.operations.length > 0 && (
+   610→                    <Card className="border-gray-200">
+   611→                      <CardContent className="p-4">
+   612→                        <div className="flex items-center gap-2 mb-3">
+   613→                          <BarChart3 className="w-4 h-4 text-gray-500" />
+   614→                          <h4 className="text-xs font-medium text-gray-600">Compression Operations</h4>
+   615→                        </div>
+   616→                        <div className="space-y-2">
+   617→                          {result.operations.map((op, i) => (
+   618→                            <div key={i} className="flex items-start gap-2">
+   619→                              <ChevronRight className="w-3 h-3 text-green-500 mt-0.5 shrink-0" />
+   620→                              <div className="flex-1 min-w-0">
+   621→                                <p className="text-xs text-gray-700">{op.description}</p>
+   622→                                {op.savedBytes > 0 && (
+   623→                                  <p className="text-[10px] text-green-600">Saved {formatFileSize(op.savedBytes)}</p>
+   624→                                )}
+   625→                              </div>
+   626→                            </div>
+   627→                          ))}
+   628→                        </div>
+   629→                      </CardContent>
+   630→                    </Card>
+   631→                  )}
+   632→
+   633→                  {/* Download */}
+   634→                  <div className="flex items-center gap-3">
+   635→                    <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleDownload}>
+   636→                      <Download className="w-4 h-4 mr-2" />
+   637→                      Download Compressed PDF
+   638→                    </Button>
+   639→                    <Button variant="outline" className="text-xs" onClick={() => { setSelectedFile(null); setResult(null); setPreview(null) }}>
+   640→                      Compress Another File
+   641→                    </Button>
+   642→                  </div>
+   643→                </div>
+   644→              )}
+   645→
+   646→              {/* Compressing State */}
+   647→              {isCompressing && !result && (
+   648→                <Card className="border-gray-200">
+   649→                  <CardContent className="p-8 flex flex-col items-center justify-center">
+   650→                    <Loader2 className="w-8 h-8 text-green-600 animate-spin mb-3" />
+   651→                    <p className="text-sm font-medium text-gray-700">Compressing PDF...</p>
+   652→                    <p className="text-xs text-gray-400 mt-1">Optimizing {selectedFile.name}</p>
+   653→                    <div className="w-48 mt-4">
+   654→                      <Progress value={compressionProgress ? (compressionProgress.current / compressionProgress.total) * 100 : 30} className="h-1.5" />
+   655→                    </div>
+   656→                    <p className="text-[10px] text-gray-400 mt-2">
+   657→                      {compressionProgress?.fileName || 'Processing...'}
+   658→                    </p>
+   659→                  </CardContent>
+   660→                </Card>
+   661→              )}
+   662→            </div>
+   663→          )}
+   664→        </div>
+   665→
+   666→        {/* Settings Panel */}
+   667→        <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l border-gray-200 p-4 md:p-5 md:overflow-y-auto shrink-0">
+   668→          <h3 className="text-sm font-semibold text-gray-800 mb-4">Compression Settings</h3>
+   669→
+   670→          {!selectedFile ? (
+   671→            /* No file selected — show disabled preview with hint */
+   672→            <div className="space-y-5 opacity-50 pointer-events-none select-none">
+   673→              {/* Preset Cards (disabled preview) */}
+   674→              <div>
+   675→                <label className="text-xs font-medium text-gray-600 mb-3 block">Quality Preset</label>
+   676→                <div className="space-y-2">
+   677→                  {PRESET_CARDS.map((p) => (
+   678→                    <div
+   679→                      key={p.id}
+   680→                      className={cn(
+   681→                        'w-full p-3 rounded-lg border-2 text-left',
+   682→                        compressionPreset === p.id
+   683→                          ? p.color + ' shadow-sm'
+   684→                          : 'border-gray-100'
+   685→                      )}
+   686→                    >
+   687→                      <div className="flex items-center gap-2.5">
+   688→                        <div className={cn(
+   689→                          'w-8 h-8 rounded-lg flex items-center justify-center',
+   690→                          compressionPreset === p.id ? p.color.split(' ').slice(1).join(' ') : 'bg-gray-100'
+   691→                        )}>
+   692→                          <p.icon className={cn(
+   693→                            'w-4 h-4',
+   694→                            compressionPreset === p.id ? p.color.split(' ')[0] : 'text-gray-400'
+   695→                          )} />
+   696→                        </div>
+   697→                        <div className="flex-1 min-w-0">
+   698→                          <div className="flex items-center justify-between">
+   699→                            <p className="text-xs font-semibold text-gray-800">{p.label}</p>
+   700→                            <span className="text-[10px] text-gray-400">{p.savings}</span>
+   701→                          </div>
+   702→                          <p className="text-[10px] text-gray-500 mt-0.5">{p.description}</p>
+   703→                        </div>
+   704→                      </div>
+   705→                    </div>
+   706→                  ))}
+   707→                </div>
+   708→              </div>
+   709→
+   710→              <Separator />
+   711→
+   712→              <div className="flex flex-col items-center py-4 text-center">
+   713→                <FileDown className="w-8 h-8 text-gray-300 mb-2" />
+   714→                <p className="text-xs font-medium text-gray-500">Select a file first</p>
+   715→                <p className="text-[10px] text-gray-400 mt-1">Settings will activate once a PDF is chosen</p>
+   716→              </div>
+   717→            </div>
+   718→          ) : (
+   719→            /* File selected — full interactive settings */
+   720→            <div className="space-y-5">
+   721→              {/* Preset Cards */}
+   722→              <div>
+   723→                <label className="text-xs font-medium text-gray-600 mb-3 block">Quality Preset</label>
+   724→                <div className="space-y-2">
+   725→                  {PRESET_CARDS.map((p) => (
+   726→                    <button
+   727→                      key={p.id}
+   728→                      onClick={() => setCompressionPreset(p.id)}
+   729→                      className={cn(
+   730→                        'w-full p-3 rounded-lg border-2 text-left transition-all',
+   731→                        compressionPreset === p.id
+   732→                          ? p.color + ' shadow-sm'
+   733→                          : 'border-gray-100 hover:border-gray-200'
+   734→                      )}
+   735→                    >
+   736→                      <div className="flex items-center gap-2.5">
+   737→                        <div className={cn(
+   738→                          'w-8 h-8 rounded-lg flex items-center justify-center',
+   739→                          compressionPreset === p.id ? p.color.split(' ').slice(1).join(' ') : 'bg-gray-100'
+   740→                        )}>
+   741→                          <p.icon className={cn(
+   742→                            'w-4 h-4',
+   743→                            compressionPreset === p.id ? p.color.split(' ')[0] : 'text-gray-400'
+   744→                          )} />
+   745→                        </div>
+   746→                        <div className="flex-1 min-w-0">
+   747→                          <div className="flex items-center justify-between">
+   748→                            <p className="text-xs font-semibold text-gray-800">{p.label}</p>
+   749→                            <span className="text-[10px] text-gray-400">{p.savings}</span>
+   750→                          </div>
+   751→                          <p className="text-[10px] text-gray-500 mt-0.5">{p.description}</p>
+   752→                        </div>
+   753→                      </div>
+   754→                    </button>
+   755→                  ))}
+   756→                </div>
+   757→              </div>
+   758→
+   759→              <Separator />
+   760→
+   761→              {/* What Gets Compressed */}
+   762→              <div>
+   763→                <label className="text-xs font-medium text-gray-600 mb-2 block">What Gets Compressed</label>
+   764→                <div className="space-y-1.5 text-xs text-gray-500">
+   765→                  <div className="flex items-center gap-2">
+   766→                    <ImageIcon className="w-3.5 h-3.5 text-green-500" />
+   767→                    <span>Image recompression (sharp JPEG)</span>
+   768→                  </div>
+   769→                  <div className="flex items-center gap-2">
+   770→                    <Type className="w-3.5 h-3.5 text-green-500" />
+   771→                    <span>Font & metadata cleanup</span>
+   772→                  </div>
+   773→                  <div className="flex items-center gap-2">
+   774→                    <Copy className="w-3.5 h-3.5 text-green-500" />
+   775→                    <span>Duplicate object removal</span>
+   776→                  </div>
+   777→                  <div className="flex items-center gap-2">
+   778→                    <Layers className="w-3.5 h-3.5 text-green-500" />
+   779→                    <span>Object stream consolidation</span>
+   780→                  </div>
+   781→                </div>
+   782→              </div>
+   783→
+   784→              <Separator />
+   785→
+   786→              {/* Preset Details */}
+   787→              <div>
+   788→                <label className="text-xs font-medium text-gray-600 mb-2 block">
+   789→                  {compressionPreset === 'high-quality' ? 'High Quality' : compressionPreset === 'balanced' ? 'Balanced' : 'Maximum'} Settings
+   790→                </label>
+   791→                <div className="space-y-1.5 text-xs">
+   792→                  <div className="flex justify-between">
+   793→                    <span className="text-gray-400">JPEG Quality</span>
+   794→                    <span className="text-gray-700 font-medium">
+   795→                      {compressionPreset === 'high-quality' ? '85%' : compressionPreset === 'balanced' ? '65%' : '40%'}
+   796→                    </span>
+   797→                  </div>
+   798→                  <div className="flex justify-between">
+   799→                    <span className="text-gray-400">Max DPI</span>
+   800→                    <span className="text-gray-700 font-medium">
+   801→                      {compressionPreset === 'high-quality' ? '300' : compressionPreset === 'balanced' ? '200' : '150'}
+   802→                    </span>
+   803→                  </div>
+   804→                  <div className="flex justify-between">
+   805→                    <span className="text-gray-400">Image Downscale</span>
+   806→                    <span className="text-gray-700 font-medium">
+   807→                      {compressionPreset === 'high-quality' ? '3000px' : compressionPreset === 'balanced' ? '2000px' : '1200px'}
+   808→                    </span>
+   809→                  </div>
+   810→                  <div className="flex justify-between">
+   811→                    <span className="text-gray-400">Remove Metadata</span>
+   812→                    <span className="text-green-600 font-medium">Yes</span>
+   813→                  </div>
+   814→                  <div className="flex justify-between">
+   815→                    <span className="text-gray-400">Object Streams</span>
+   816→                    <span className="text-green-600 font-medium">Yes</span>
+   817→                  </div>
+   818→                </div>
+   819→              </div>
+   820→
+   821→              <Separator />
+   822→
+   823→              {/* File Info */}
+   824→              <div>
+   825→                <label className="text-xs font-medium text-gray-600 mb-2 block">File Information</label>
+   826→                <div className="space-y-2">
+   827→                  <div className="flex justify-between text-xs">
+   828→                    <span className="text-gray-400">File Name</span>
+   829→                    <span className="text-gray-700 truncate ml-2 max-w-[160px]">{selectedFile.name}</span>
+   830→                  </div>
+   831→                  <div className="flex justify-between text-xs">
+   832→                    <span className="text-gray-400">File Size</span>
+   833→                    <span className="text-gray-700">{formatFileSize(selectedFile.size)}</span>
+   834→                  </div>
+   835→                  <div className="flex justify-between text-xs">
+   836→                    <span className="text-gray-400">Pages</span>
+   837→                    <span className="text-gray-700">{selectedFile.pages}</span>
+   838→                  </div>
+   839→                  {preview && (
+   840→                    <>
+   841→                      <div className="flex justify-between text-xs">
+   842→                        <span className="text-gray-400">Images</span>
+   843→                        <span className="text-gray-700">{preview.preview.analysis.imageCount}</span>
+   844→                      </div>
+   845→                      <div className="flex justify-between text-xs">
+   846→                        <span className="text-gray-400">Objects</span>
+   847→                        <span className="text-gray-700">{preview.preview.analysis.estimatedObjectCount}</span>
+   848→                      </div>
+   849→                    </>
+   850→                  )}
+   851→                  {result && (
+   852→                    <>
+   853→                      <Separator />
+   854→                      <div className="flex justify-between text-xs">
+   855→                        <span className="text-green-600 font-medium">Saved</span>
+   856→                        <span className="text-green-600 font-medium">{result.compression.savedPercent}%</span>
+   857→                      </div>
+   858→                    </>
+   859→                  )}
+   860→                </div>
+   861→              </div>
+   862→
+   863→              <Separator />
+   864→
+   865→              <div className="space-y-2">
+   866→                <Button
+   867→                  className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
+   868→                  disabled={isCompressing}
+   869→                  onClick={handleCompress}
+   870→                >
+   871→                  {isCompressing ? (
+   872→                    <>
+   873→                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+   874→                      Compressing...
+   875→                    </>
+   876→                  ) : (
+   877→                    <>
+   878→                      <ArrowDown className="w-3.5 h-3.5 mr-1" />
+   879→                      Compress PDF
+   880→                    </>
+   881→                  )}
+   882→                </Button>
+   883→                <Button
+   884→                  variant="outline"
+   885→                  className="w-full h-9 text-xs"
+   886→                  onClick={() => { setSelectedFile(null); setResult(null); setPreview(null) }}
+   887→                >
+   888→                  Back to File List
+   889→                </Button>
+   890→              </div>
+   891→            </div>
+   892→          )}
+   893→
+   894→          <Separator />
+   895→          <ToolHistoryPanel
+   896→            history={history}
+   897→            onDelete={deleteItem}
+   898→            onClearAll={clearHistory}
+   899→            toolLabel="Compress PDF"
+   900→            isLoaded={isLoaded}
+   901→            compact
+   902→          />
+   903→        </div>
+   904→      </div>
+   905→    </div>
+   906→  )
+   907→}
+   908→

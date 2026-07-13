@@ -18,6 +18,7 @@ import {
   Trash2,
   PenTool,
   Crop,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -50,6 +51,7 @@ const allTools: ToolItem[] = [
   { id: 'delete-blank', label: 'Delete Blank Pages', description: 'Batch delete PDF blank pages.', icon: Trash2, view: 'home', comingSoon: true },
   { id: 'sign', label: 'Sign Document', description: 'Sign PDF documents digitally.', icon: PenTool, badge: 'New', view: 'sign' },
   { id: 'crop', label: 'Crop', description: 'Crop PDF pages with visual editor.', icon: Crop, badge: 'New', view: 'crop' },
+  { id: 'cleanup', label: 'Background & Watermark Remover', description: 'Remove watermarks, backgrounds & clean scanned pages.', icon: Sparkles, badge: 'New', view: 'cleanup' },
 ]
 
 export function AllTools() {
