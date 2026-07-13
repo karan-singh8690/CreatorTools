@@ -1,0 +1,14 @@
+{
+  "id": "cln-mrirvzrh-vbu82j",
+  "createdAt": 1783919966669,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "test-scanned.pdf",
+  "originalSizeBytes": 3527114,
+  "originalPath": "/tmp/creatortools-cleanup/cleanup-1783919966670-8ny5qe/test-scanned.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783919968327-w1z2sg/output.pdf",
+  "outputName": "test-scanned-cleaned.pdf",
+  "outputSizeBytes": 51305,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mrirvzrh-vbu82j"
+}

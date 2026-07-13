@@ -32,6 +32,7 @@ import {
   mergeSearchablePdfs,
   compressWithGhostscript,
   optimizeWithQpdf,
+  buildPdfA,
   stripTextWatermarkFromVector,
   surgicalWatermarkRepair,
   fileSize,
@@ -416,20 +417,32 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
       }
     }
 
-    // ── Step 4: optimization / compression ──────────────────────────────
-    await updateProgress(jobId, {
-      stage: 'optimizing',
-      message: 'Optimizing output PDF…',
-      percent: 90,
-    });
-
+    // ── Step 4: optimization / compression / PDF/A conversion ───────────
     const finalPath = path.join(jobDir, 'output.pdf');
 
-    if (options.compressAfter || options.outputFormat === 'compressed') {
+    if (options.outputFormat === 'pdfa-2b' || options.outputFormat === 'pdfa-3') {
+      // PDF/A archival conversion (ISO 19005-2b / -3b) via Ghostscript.
+      await updateProgress(jobId, {
+        stage: 'optimizing',
+        message: `Converting to ${options.outputFormat.toUpperCase()} (archival PDF)…`,
+        percent: 90,
+      });
+      await buildPdfA(currentPath, finalPath, options.outputFormat);
+    } else if (options.compressAfter || options.outputFormat === 'compressed') {
+      await updateProgress(jobId, {
+        stage: 'optimizing',
+        message: 'Compressing output PDF…',
+        percent: 90,
+      });
       const tmp = path.join(jobDir, 'compressed.pdf');
       await compressWithGhostscript(currentPath, tmp, options.quality);
       await optimizeWithQpdf(tmp, finalPath);
     } else {
+      await updateProgress(jobId, {
+        stage: 'optimizing',
+        message: 'Optimizing output PDF…',
+        percent: 90,
+      });
       await optimizeWithQpdf(currentPath, finalPath);
     }
 

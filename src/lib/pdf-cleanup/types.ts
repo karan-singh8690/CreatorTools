@@ -37,12 +37,16 @@ export type OutputFormat =
   | 'original' // Original quality PDF
   | 'compressed' // Compressed PDF (ghostscript)
   | 'searchable' // Searchable PDF (with OCR text layer)
-  | 'flattened'; // Flattened PDF (no layers, image-based)
+  | 'flattened' // Flattened PDF (no layers, image-based)
+  | 'pdfa-2b' // PDF/A-2b archival (Ghostscript + sRGB ICC)
+  | 'pdfa-3'; // PDF/A-3 archival (allows embedded files)
 
 export const OUTPUT_FORMATS: { id: OutputFormat; label: string; description: string }[] = [
-  { id: 'original', label: 'Original Quality', description: 'Full fidelity · searchable text preserved' },
+  { id: 'original', label: 'Standard PDF', description: 'Full fidelity · searchable text preserved' },
   { id: 'compressed', label: 'Compressed', description: 'Smaller file via Ghostscript · searchable text preserved' },
   { id: 'searchable', label: 'Searchable', description: 'Force OCR on scans (text PDFs already preserved)' },
+  { id: 'pdfa-2b', label: 'PDF/A-2b', description: 'Archival PDF · ISO 19005-2 · sRGB · long-term preservation' },
+  { id: 'pdfa-3', label: 'PDF/A-3', description: 'Archival PDF · ISO 19005-3 · allows embedded files' },
   { id: 'flattened', label: 'Flattened', description: 'Image-only · discards text layer' },
 ];
 

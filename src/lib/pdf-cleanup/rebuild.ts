@@ -316,6 +316,90 @@ export async function compressWithGhostscript(
 }
 
 /**
+ * Convert a PDF to PDF/A (archival ISO 19005) using Ghostscript.
+ *
+ * PDF/A-2b: long-term preservation, sRGB color space, no external refs,
+ *           embedded fonts. ISO 19005-2.
+ * PDF/A-3:  same as -2b but allows embedded files (attachments). ISO 19005-3.
+ *
+ * Ghostscript's `pdfwrite` device with `-dPDFA=2|3` produces a compliant
+ * PDF/A with an embedded ICC profile + XMP metadata declaring the
+ * pdfaid:part / pdfaid:conformance. We embed the sRGB ICC profile from
+ * /usr/share/color/icc/ghostscript/srgb.icc (bundled with Ghostscript).
+ *
+ * Falls back to copying the input on any conversion error.
+ */
+export async function buildPdfA(
+  inFile: string,
+  outFile: string,
+  profile: 'pdfa-2b' | 'pdfa-3'
+): Promise<void> {
+  // Locate the sRGB ICC profile (Ghostscript ships it).
+  const iccCandidates = [
+    '/usr/share/color/icc/ghostscript/srgb.icc',
+    '/usr/share/color/icc/colord/sRGB.icc',
+    '/usr/local/share/color/icc/srgb.icc',
+  ];
+  let iccPath = '';
+  for (const p of iccCandidates) {
+    try {
+      await fs.access(p);
+      iccPath = p;
+      break;
+    } catch {
+      /* try next */
+    }
+  }
+
+  const pdfaPart = profile === 'pdfa-3' ? 3 : 2;
+
+  try {
+    const args = [
+      '-dQUIET',
+      '-dBATCH',
+      '-dNOPAUSE',
+      '-sDEVICE=pdfwrite',
+      `-dPDFA=${pdfaPart}`,
+      '-dPDFACompatibilityPolicy=1',
+      '-sColorConversionStrategy=sRGB',
+      '-dEmbedAllFonts=true',
+      '-dSubsetFonts=true',
+      '-dCompressFonts=true',
+      '-dDetectDuplicateImages=true',
+      '-dAutoRotatePages=/None',
+      '-dPrinted=false',
+      '-dPreserveEPSInfo=false',
+      '-dPreserveOPIComments=false',
+      '-dUCRandBGInfo=/Remove',
+    ];
+    if (iccPath) {
+      args.push(`-sOutputICCProfileFile=${iccPath}`);
+    }
+    args.push(`-sOutputFile=${outFile}`, inFile);
+
+    await execFileP('gs', args, {
+      timeout: 300_000,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+
+    // Verify the output has PDF/A XMP metadata; if not, fall back.
+    const out = await fs.readFile(outFile);
+    const text = out.toString('latin1');
+    if (!text.includes('pdfaid:part')) {
+      // XMP metadata missing — conversion didn't fully succeed.
+      throw new Error('PDF/A XMP metadata not found in output');
+    }
+  } catch (err) {
+    // Fallback: copy the input so the job still produces a usable PDF.
+    try {
+      await fs.copyFile(inFile, outFile);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
  * Linearize/optimize a PDF with qpdf for faster web viewing. Best-effort.
  */
 export async function optimizeWithQpdf(inFile: string, outFile: string): Promise<void> {

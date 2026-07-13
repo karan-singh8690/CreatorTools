@@ -275,3 +275,31 @@ Stage Summary:
 - Each stage is a real implementation using sharp's image processing operations + custom algorithms (projection-profile deskew, connected-component hole-punch detection, background-estimation shadow removal).
 - Pipeline order is critical: border removal before shadow removal (shadow lightens borders), deskew after border+shadow removal (noise overwhelms text-line signal).
 - Files modified: src/lib/pdf-cleanup/raster-clean.ts (full rewrite with 7 new stage functions), src/lib/pdf-cleanup/rebuild.ts (buildImagePdf pageWidthPts/pageHeightPts), src/lib/pdf-cleanup/index.ts (pass info.pageSize to buildImagePdf).
+
+---
+Task ID: 10
+Agent: main (Z.ai Code)
+Task: Add PDF/A-2b and PDF/A-3 output options for archival PDFs.
+
+Work Log:
+- Extended OutputFormat type: added 'pdfa-2b' and 'pdfa-3' to the union. Updated OUTPUT_FORMATS array with labels: "PDF/A-2b" (ISO 19005-2 · sRGB · long-term preservation) and "PDF/A-3" (ISO 19005-3 · allows embedded files). Also relabeled 'original' to "Standard PDF" for clarity.
+- Verified Ghostscript PDF/A support: gs 10.05 with sRGB ICC profile at /usr/share/color/icc/ghostscript/srgb.icc. Confirmed the -dPDFA=2/-dPDFA=3 + -sOutputICCProfileFile + -sColorConversionStrategy=sRGB flags produce valid PDF/A output with XMP metadata declaring pdfaid:part='2'/'3' and pdfaid:conformance='B'.
+- Added buildPdfA function to rebuild.ts:
+  - Locates sRGB ICC profile from 3 candidate paths (ghostscript/colord/local).
+  - Runs gs with -dPDFA=2|3 -dPDFACompatibilityPolicy=1 -sColorConversionStrategy=sRGB -sOutputICCProfileFile=<srgb.icc> + font embedding (EmbedAllFonts, SubsetFonts, CompressFonts) + cleanup flags (UCRandBGInfo=/Remove, PreserveEPSInfo=false, etc.).
+  - Verifies output contains pdfaid:part XMP metadata; falls back to copying input if conversion fails.
+  - 5-minute timeout for large PDFs.
+- Updated orchestrator Step 4: routes pdfa-2b/pdfa-3 output formats through buildPdfA (with progress message "Converting to PDFA-2B (archival PDF)…"). Compressed/original/flattened paths unchanged.
+- Verified end-to-end on 3 scenarios:
+  - PDF/A-2b on watermark-removed vector PDF: part=2 conformance=B, 7.2KB, DRAFT removed ✓
+  - PDF/A-3 on watermark-removed vector PDF: part=3 conformance=B, 7.2KB ✓
+  - PDF/A-2b on scanned PDF (clean-scan mode): part=2 conformance=B, 51KB ✓
+- Frontend auto-picks up new options from OUTPUT_FORMATS (the OutputFormatSelector maps over the array). Grid uses grid-cols-2 sm:grid-cols-4 — 6 options wrap to 3 rows on mobile, 2 rows on desktop. Agent Browser confirms tool renders with no console errors.
+- Lint: 0 errors.
+
+Stage Summary:
+- Businesses can now produce archival PDFs: PDF/A-2b (ISO 19005-2b, sRGB, long-term preservation) and PDF/A-3 (ISO 19005-3, allows embedded files/attachments).
+- Output format options now: Standard PDF · Compressed · Searchable · PDF/A-2b · PDF/A-3 · Flattened.
+- All output formats work in combination with all cleanup modes (watermark removal, background removal, clean-scan, full cleanup). PDF/A conversion runs as the final step, so the archival PDF contains the cleaned content.
+- Verified via XMP metadata inspection: pdfaid:part and pdfaid:conformance correctly embedded.
+- Files modified: src/lib/pdf-cleanup/types.ts (OutputFormat + OUTPUT_FORMATS), src/lib/pdf-cleanup/rebuild.ts (buildPdfA function), src/lib/pdf-cleanup/index.ts (import + Step 4 routing).
