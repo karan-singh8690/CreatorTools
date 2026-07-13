@@ -1,0 +1,1001 @@
+---ZAI.TS---
+/**
+ * z-ai-web-dev-sdk helper.
+ *
+ * The SDK's ZAI.create() method reads a .z-ai-config file from disk,
+ * which doesn't exist on Vercel (read-only filesystem). Instead of
+ * writing a config file at runtime, we bypass create() entirely and
+ * instantiate the ZAI class directly with our config object.
+ *
+ * This works because the SDK constructor is:
+ *   constructor(config) { this.config = config; ... }
+ */
+
+const ZAI_CONFIG = {
+  baseUrl: process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1',
+  apiKey: process.env.ZAI_API_KEY || 'Z.ai',
+  chatId: process.env.ZAI_CHAT_ID || 'chat-6d2181a7-c845-4973-b026-79828c02e372',
+  userId: process.env.ZAI_USER_ID || '994410df-9d0f-467d-bebf-bda48a9477af',
+  token: process.env.ZAI_TOKEN || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOTk0NDEwZGYtOWQwZi00NjdkLWJlYmYtYmRhNDhhOTQ3N2FmIiwiY2hhdF9pZCI6ImNoYXQtNmQyMTgxYTctYzg0NS00OTczLWIwMjYtNzk4MjhjMDJlMzcyIiwicGxhdGZvcm0iOiJ6YWkifQ.zXHYrh4tvYG3U9D_qIFnO_Ry9nvBqIPUGHUqZCFbGxE',
+}
+
+let zaiInstance: InstanceType<typeof import('z-ai-web-dev-sdk').default> | null = null
+
+/**
+ * Get a configured z-ai-web-dev-sdk instance.
+ * Creates the instance directly with config — no config file needed.
+ */
+export async function getZai() {
+  if (zaiInstance) return zaiInstance
+
+  const ZAI = (await import('z-ai-web-dev-sdk')).default
+  // Use the constructor directly instead of ZAI.create()
+  // This completely bypasses the loadConfig() file-reading logic
+  zaiInstance = new ZAI(ZAI_CONFIG)
+  return zaiInstance
+}
+---SEO-CONFIG---
+// ============================================================
+// CreatorTools SEO Configuration
+// All tool metadata for sitemap, landing pages, and social sharing
+// ============================================================
+
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://creatortools.app';
+export const SITE_NAME = 'CreatorTools';
+export const SITE_TAGLINE = 'Your All-in-One Creative Toolkit';
+
+export interface ToolSEO {
+  slug: string;
+  viewId: string;
+  title: string;
+  metaTitle: string;
+  metaDescription: string;
+  keywords: string[];
+  h1: string;
+  subtitle: string;
+  icon: string;
+  color: string;
+  features: { title: string; desc: string }[];
+  howItWorks: { step: number; title: string; desc: string }[];
+  faq: { question: string; answer: string }[];
+}
+
+export const toolsSEO: ToolSEO[] = [
+  {
+    slug: 'pdf-editor',
+    viewId: 'edit-pdf',
+    title: 'Edit PDF',
+    metaTitle: 'Free PDF Editor Online - Edit Text, Images & Annotations',
+    metaDescription: 'Edit PDF files online for free. Add text, images, annotations, and highlights to any PDF document. No download required. Fast, secure, and easy to use.',
+    keywords: ['pdf editor', 'edit pdf online', 'free pdf editor', 'pdf annotation', 'add text to pdf', 'edit pdf free', 'online pdf editor', 'pdf text editor'],
+    h1: 'Edit PDF Online — Free & Easy',
+    subtitle: 'Add text, images, annotations, and highlights to any PDF document. No downloads, no signups, no watermarks.',
+    icon: 'FileText',
+    color: '#4A90D9',
+    features: [
+      { title: 'Add Text & Images', desc: 'Insert text boxes, images, and shapes anywhere on your PDF pages.' },
+      { title: 'Highlight & Annotate', desc: 'Highlight important text, add comments, and draw annotations.' },
+      { title: 'Modify Existing Content', desc: 'Edit existing text and objects within your PDF document.' },
+      { title: 'Real-Time Preview', desc: 'See all your changes instantly with live PDF preview.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload Your PDF', desc: 'Drag and drop or browse to select your PDF file.' },
+      { step: 2, title: 'Make Your Edits', desc: 'Add text, images, annotations, or modify existing content.' },
+      { step: 3, title: 'Download', desc: 'Save your edited PDF instantly. No watermarks added.' },
+    ],
+    faq: [
+      { question: 'Is the PDF editor really free?', answer: 'Yes! CreatorTools PDF editor is completely free to use with no hidden fees or watermarks on your output files.' },
+      { question: 'Do I need to download any software?', answer: 'No, our PDF editor works entirely in your browser. No downloads, installations, or plugins required.' },
+      { question: 'Is my PDF data secure?', answer: 'Absolutely. All processing happens on our secure servers and files are automatically deleted after processing. We never share your data.' },
+      { question: 'Can I edit scanned PDFs?', answer: 'Yes, combined with our OCR feature, you can extract and edit text from scanned PDF documents.' },
+    ],
+  },
+  {
+    slug: 'create-pdf',
+    viewId: 'create-pdf',
+    title: 'Create PDF',
+    metaTitle: 'Create PDF Online Free - Make PDF from Scratch',
+    metaDescription: 'Create professional PDF documents from scratch online. Add text, images, tables, and formatting. Free PDF creator with no registration required.',
+    keywords: ['create pdf', 'make pdf online', 'pdf creator', 'create pdf free', 'new pdf document', 'generate pdf', 'pdf maker'],
+    h1: 'Create PDF Documents Online',
+    subtitle: 'Build professional PDF documents from scratch with text, images, and custom formatting. No software needed.',
+    icon: 'FilePlus',
+    color: '#10B981',
+    features: [
+      { title: 'From Scratch', desc: 'Start with a blank page and build your PDF document from the ground up.' },
+      { title: 'Rich Content', desc: 'Add headings, paragraphs, images, tables, and custom formatting.' },
+      { title: 'Custom Page Setup', desc: 'Choose page size, margins, and orientation for your document.' },
+      { title: 'Instant Export', desc: 'Generate and download your PDF in seconds.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Choose Page Setup', desc: 'Select page size, orientation, and margins for your document.' },
+      { step: 2, title: 'Add Your Content', desc: 'Write text, add images, and format your document.' },
+      { step: 3, title: 'Download PDF', desc: 'Generate your professional PDF and download it instantly.' },
+    ],
+    faq: [
+      { question: 'Can I create a PDF from scratch?', answer: 'Yes! Our PDF creator lets you build documents from a blank page with full formatting control.' },
+      { question: 'What content can I add?', answer: 'You can add text, headings, images, tables, bullet points, and apply custom formatting styles.' },
+      { question: 'Is there a page limit?', answer: 'Free users can create documents up to 20 pages. Pro users have unlimited pages.' },
+    ],
+  },
+  {
+    slug: 'convert-pdf',
+    viewId: 'convert',
+    title: 'Convert PDF',
+    metaTitle: 'Free PDF Converter - Convert PDF to Word, Excel, Image & More',
+    metaDescription: 'Convert PDF to Word, Excel, PowerPoint, images, and more. Free online PDF converter with high accuracy. Fast, secure, and no registration needed.',
+    keywords: ['pdf converter', 'pdf to word', 'pdf to excel', 'pdf to image', 'convert pdf free', 'pdf to docx', 'pdf to jpg', 'online pdf converter'],
+    h1: 'Convert PDF to Any Format',
+    subtitle: 'Transform your PDFs into Word, Excel, PowerPoint, images, and more with high accuracy and instant results.',
+    icon: 'ArrowRightLeft',
+    color: '#8B5CF6',
+    features: [
+      { title: 'PDF to Word', desc: 'Convert PDF to editable Word (.docx) documents with layout preservation.' },
+      { title: 'PDF to Excel', desc: 'Extract tables and data from PDF into Excel spreadsheets.' },
+      { title: 'PDF to Images', desc: 'Convert PDF pages to high-quality JPG, PNG, or TIFF images.' },
+      { title: 'Many More Formats', desc: 'Convert to PowerPoint, HTML, TXT, and other popular formats.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select or drag and drop your PDF file.' },
+      { step: 2, title: 'Choose Format', desc: 'Pick your desired output format (Word, Excel, Image, etc.).' },
+      { step: 3, title: 'Download', desc: 'Get your converted file instantly in the chosen format.' },
+    ],
+    faq: [
+      { question: 'What formats can I convert PDF to?', answer: 'You can convert PDF to Word (DOCX), Excel (XLSX), PowerPoint (PPTX), JPG, PNG, HTML, TXT, and more.' },
+      { question: 'Will the formatting be preserved?', answer: 'We use advanced conversion technology to preserve fonts, layouts, images, and tables as closely as possible.' },
+      { question: 'Is the conversion accurate?', answer: 'Our converter achieves 95%+ accuracy for most documents. Complex layouts may have minor formatting differences.' },
+    ],
+  },
+  {
+    slug: 'ocr-pdf',
+    viewId: 'ocr',
+    title: 'OCR PDF',
+    metaTitle: 'Free OCR PDF - Extract Text from Scanned PDFs & Images',
+    metaDescription: 'Extract text from scanned PDFs and images using advanced OCR technology. Free online optical character recognition with high accuracy. No installation needed.',
+    keywords: ['ocr pdf', 'pdf ocr', 'extract text from pdf', 'ocr online', 'scanned pdf to text', 'image to text', 'optical character recognition', 'pdf text extraction'],
+    h1: 'OCR PDF — Extract Text from Scans',
+    subtitle: 'Turn scanned documents and images into searchable, editable text with our powerful AI-based OCR engine.',
+    icon: 'ScanLine',
+    color: '#EC4899',
+    features: [
+      { title: 'AI-Powered OCR', desc: 'Advanced neural network technology for accurate text recognition.' },
+      { title: 'Multi-Language', desc: 'Support for 50+ languages including English, Spanish, Chinese, and more.' },
+      { title: 'Handwriting Support', desc: 'Recognize printed and handwritten text from scanned documents.' },
+      { title: 'Searchable PDFs', desc: 'Convert scanned PDFs into searchable and selectable text documents.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload Scanned PDF', desc: 'Upload your scanned document or image file.' },
+      { step: 2, title: 'OCR Processing', desc: 'Our AI engine recognizes and extracts all text content.' },
+      { step: 3, title: 'Get Your Text', desc: 'Download the extracted text or the searchable PDF version.' },
+    ],
+    faq: [
+      { question: 'What is OCR?', answer: 'OCR (Optical Character Recognition) is technology that converts images of text into machine-readable text. It makes scanned documents searchable and editable.' },
+      { question: 'How accurate is the OCR?', answer: 'Our AI-powered OCR achieves 98%+ accuracy for printed text. Handwriting recognition accuracy varies by quality.' },
+      { question: 'What languages are supported?', answer: 'We support 50+ languages including English, Spanish, French, German, Chinese, Japanese, Korean, and more.' },
+    ],
+  },
+  {
+    slug: 'combine-pdf',
+    viewId: 'combine-files',
+    title: 'Combine PDF',
+    metaTitle: 'Merge PDF Files Online Free - Combine Multiple PDFs',
+    metaDescription: 'Merge multiple PDF files into one document online for free. Combine, rearrange, and organize PDF pages easily. No signup or watermarks.',
+    keywords: ['merge pdf', 'combine pdf', 'join pdf', 'pdf merger', 'merge pdf online', 'combine pdf files', 'free pdf merger', 'pdf joiner'],
+    h1: 'Merge PDF Files into One',
+    subtitle: 'Combine multiple PDF documents into a single file. Drag, drop, reorder, and merge — it\'s that simple.',
+    icon: 'Combine',
+    color: '#10B981',
+    features: [
+      { title: 'Drag & Drop', desc: 'Easily add and reorder PDF files with intuitive drag and drop.' },
+      { title: 'Unlimited Files', desc: 'Merge as many PDF files as you need in one operation.' },
+      { title: 'Page Selection', desc: 'Choose specific pages from each PDF to include in the merged file.' },
+      { title: 'Preserve Quality', desc: 'Original formatting, fonts, and images are perfectly preserved.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Add PDF Files', desc: 'Upload multiple PDF files you want to merge.' },
+      { step: 2, title: 'Rearrange Order', desc: 'Drag and drop to set the order of your documents.' },
+      { step: 3, title: 'Merge & Download', desc: 'Click merge and download your combined PDF instantly.' },
+    ],
+    faq: [
+      { question: 'How many PDFs can I merge at once?', answer: 'You can merge unlimited PDF files in a single operation. No restrictions on the number of files.' },
+      { question: 'Will the quality be affected?', answer: 'No, merging preserves the original quality of all pages, including text, images, and formatting.' },
+      { question: 'Can I reorder pages before merging?', answer: 'Yes, you can drag and drop to rearrange the order of files and even select specific pages from each document.' },
+    ],
+  },
+  {
+    slug: 'compress-pdf',
+    viewId: 'compress',
+    title: 'Compress PDF',
+    metaTitle: 'Compress PDF Online Free - Reduce PDF File Size',
+    metaDescription: 'Reduce PDF file size online for free. Smart compression that maintains quality while shrinking file size up to 90%. No registration needed.',
+    keywords: ['compress pdf', 'reduce pdf size', 'pdf compressor', 'shrink pdf', 'pdf file size reducer', 'compress pdf online', 'free pdf compressor', 'pdf optimization'],
+    h1: 'Compress PDF — Reduce File Size',
+    subtitle: 'Shrink your PDF files by up to 90% while maintaining visual quality. Perfect for email attachments and web uploads.',
+    icon: 'FileDown',
+    color: '#F59E0B',
+    features: [
+      { title: 'Smart Compression', desc: 'Intelligent algorithms that reduce size while preserving quality.' },
+      { title: 'Multiple Quality Levels', desc: 'Choose between low, medium, and high compression based on your needs.' },
+      { title: 'Image Optimization', desc: 'Compress images within PDFs without noticeable quality loss.' },
+      { title: 'Instant Results', desc: 'See compression stats and download in seconds.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF file you want to compress.' },
+      { step: 2, title: 'Choose Compression', desc: 'Pick your desired compression level (low, medium, high).' },
+      { step: 3, title: 'Download', desc: 'Download your compressed PDF and see the size reduction.' },
+    ],
+    faq: [
+      { question: 'How much can I compress a PDF?', answer: 'Compression varies by file, but most PDFs can be reduced by 40-90% while maintaining visual quality.' },
+      { question: 'Will compression affect quality?', answer: 'Our smart compression preserves text quality. Images may have slight reduction at high compression levels, but it\'s barely noticeable.' },
+      { question: 'Is there a file size limit?', answer: 'Free users can compress files up to 50MB. Pro users can compress files up to 500MB.' },
+    ],
+  },
+  {
+    slug: 'watermark-pdf',
+    viewId: 'watermark',
+    title: 'Watermark PDF',
+    metaTitle: 'Add Watermark to PDF Online Free - PDF Watermark Tool',
+    metaDescription: 'Add text or image watermarks to PDF documents online for free. Customize font, color, opacity, position, and rotation. No signup required.',
+    keywords: ['watermark pdf', 'add watermark to pdf', 'pdf watermark', 'stamp pdf', 'pdf watermark tool', 'add text watermark pdf', 'add image watermark pdf'],
+    h1: 'Add Watermark to PDF',
+    subtitle: 'Protect your PDF documents with custom text or image watermarks. Full control over style, position, and opacity.',
+    icon: 'Droplets',
+    color: '#3B82F6',
+    features: [
+      { title: 'Text Watermarks', desc: 'Add custom text watermarks with font, size, color, and style options.' },
+      { title: 'Image Watermarks', desc: 'Stamp your logo or image as a watermark on any PDF.' },
+      { title: 'Full Customization', desc: 'Control opacity, rotation, position, and size of your watermark.' },
+      { title: 'Batch Processing', desc: 'Apply watermarks to all pages or specific pages at once.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF file you want to watermark.' },
+      { step: 2, title: 'Design Watermark', desc: 'Add text or image, customize style, position, and opacity.' },
+      { step: 3, title: 'Apply & Download', desc: 'Apply watermark to all pages and download your PDF.' },
+    ],
+    faq: [
+      { question: 'Can I use my logo as a watermark?', answer: 'Yes, you can upload any image (PNG, JPG, SVG) to use as a watermark on your PDF.' },
+      { question: 'Can I choose which pages get watermarked?', answer: 'Yes, you can apply watermarks to all pages, odd/even pages, or a custom page range.' },
+      { question: 'Can I remove a watermark later?', answer: 'Watermarks are permanently embedded in the PDF. We recommend keeping an unwatermarked backup.' },
+    ],
+  },
+  {
+    slug: 'background-pdf',
+    viewId: 'background',
+    title: 'Background PDF',
+    metaTitle: 'Add Background to PDF Online Free - PDF Background Tool',
+    metaDescription: 'Add background color or image to PDF pages online for free. Customize background for all or specific pages. Quick and easy.',
+    keywords: ['pdf background', 'add background to pdf', 'pdf page background', 'change pdf background', 'pdf background color', 'pdf background image'],
+    h1: 'Add Background to PDF',
+    subtitle: 'Enhance your PDF pages with custom background colors or images. Perfect for branded documents and presentations.',
+    icon: 'Layers',
+    color: '#6366F1',
+    features: [
+      { title: 'Color Backgrounds', desc: 'Add solid color backgrounds to your PDF pages.' },
+      { title: 'Image Backgrounds', desc: 'Use any image as a page background for branded documents.' },
+      { title: 'Page Selection', desc: 'Apply backgrounds to all pages or a custom page range.' },
+      { title: 'Opacity Control', desc: 'Adjust background transparency so content remains readable.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF file you want to add a background to.' },
+      { step: 2, title: 'Choose Background', desc: 'Pick a color or upload an image, then adjust opacity and pages.' },
+      { step: 3, title: 'Apply & Download', desc: 'Apply the background and download your updated PDF.' },
+    ],
+    faq: [
+      { question: 'Can I use a different background for each page?', answer: 'Currently, you can set one background style and apply it to all or specific pages. Per-page customization is coming soon.' },
+      { question: 'Will the background cover my text?', answer: 'No, backgrounds are placed behind existing content. You can also adjust opacity for better readability.' },
+    ],
+  },
+  {
+    slug: 'header-footer-pdf',
+    viewId: 'header-footer',
+    title: 'Header & Footer PDF',
+    metaTitle: 'Add Header & Footer to PDF Online Free',
+    metaDescription: 'Add custom headers and footers to PDF documents. Include page numbers, dates, text, and formatting. Free online tool, no signup needed.',
+    keywords: ['pdf header footer', 'add header to pdf', 'add footer to pdf', 'page numbers pdf', 'add page numbers to pdf', 'pdf header tool'],
+    h1: 'Add Headers & Footers to PDF',
+    subtitle: 'Insert page numbers, dates, document titles, and custom text into PDF headers and footers.',
+    icon: 'WrapText',
+    color: '#0EA5E9',
+    features: [
+      { title: 'Page Numbers', desc: 'Add automatic page numbering in any format (1, 2, 3 or i, ii, iii).' },
+      { title: 'Date & Time', desc: 'Insert creation date, modification date, or custom dates.' },
+      { title: 'Custom Text', desc: 'Add document titles, authors, confidentiality notices, and more.' },
+      { title: 'Flexible Positioning', desc: 'Place headers/footers left, center, or right on each page.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF file you want to add headers or footers to.' },
+      { step: 2, title: 'Configure Content', desc: 'Set page numbers, dates, and custom text for header/footer.' },
+      { step: 3, title: 'Apply & Download', desc: 'Apply to selected pages and download your updated PDF.' },
+    ],
+    faq: [
+      { question: 'Can I add page numbers to specific pages only?', answer: 'Yes, you can choose to add headers and footers to all pages or a specific page range.' },
+      { question: 'What page number formats are available?', answer: 'We support Arabic numerals (1, 2, 3), Roman numerals (I, II, III), and letter numbering (A, B, C).' },
+    ],
+  },
+  {
+    slug: 'bates-number-pdf',
+    viewId: 'bates-number',
+    title: 'Bates Number PDF',
+    metaTitle: 'Bates Numbering for PDF - Add Bates Stamps Online Free',
+    metaDescription: 'Add Bates numbering to PDF documents online for free. Professional legal document stamping with custom prefixes, suffixes, and formatting.',
+    keywords: ['bates numbering', 'bates stamp pdf', 'bates number pdf', 'legal document numbering', 'pdf bates stamp', 'bates numbering online'],
+    h1: 'Bates Number Your PDFs',
+    subtitle: 'Professional Bates numbering for legal documents. Add sequential stamps with custom prefixes and formatting.',
+    icon: 'Hash',
+    color: '#7C3AED',
+    features: [
+      { title: 'Custom Prefixes', desc: 'Add case numbers, firm names, or any prefix to Bates stamps.' },
+      { title: 'Flexible Formatting', desc: 'Control number of digits, starting number, and alignment.' },
+      { title: 'Multi-Document', desc: 'Sequential numbering across multiple PDF documents.' },
+      { title: 'Position Control', desc: 'Place Bates numbers anywhere on the page with full customization.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDFs', desc: 'Upload one or more PDF documents for Bates numbering.' },
+      { step: 2, title: 'Configure Numbering', desc: 'Set prefix, start number, digits, and position on page.' },
+      { step: 3, title: 'Apply & Download', desc: 'Generate Bates numbered PDFs and download them.' },
+    ],
+    faq: [
+      { question: 'What is Bates numbering?', answer: 'Bates numbering is a sequential numbering system used in legal, medical, and business fields to uniquely identify document pages for reference and retrieval.' },
+      { question: 'Can I continue numbering across multiple PDFs?', answer: 'Yes, our Bates numbering tool supports sequential numbering across multiple documents in a single batch.' },
+    ],
+  },
+  {
+    slug: 'security-pdf',
+    viewId: 'security',
+    title: 'Security PDF',
+    metaTitle: 'Protect PDF with Password - Add Security Online Free',
+    metaDescription: 'Password protect your PDF documents online for free. Add encryption, set permissions, and control who can view, print, or edit your PDFs.',
+    keywords: ['protect pdf', 'pdf password', 'encrypt pdf', 'pdf security', 'add password to pdf', 'secure pdf', 'pdf encryption', 'lock pdf'],
+    h1: 'Protect & Secure Your PDFs',
+    subtitle: 'Add password protection, encryption, and permission controls to keep your PDF documents safe and secure.',
+    icon: 'Shield',
+    color: '#EF4444',
+    features: [
+      { title: 'Password Protection', desc: 'Add open passwords so only authorized users can view your PDF.' },
+      { title: 'Permission Controls', desc: 'Restrict printing, copying, editing, and commenting on your PDF.' },
+      { title: 'AES Encryption', desc: '128-bit and 256-bit AES encryption for maximum security.' },
+      { title: 'Remove Protection', desc: 'Remove passwords from PDFs you own (password required).' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF file you want to protect.' },
+      { step: 2, title: 'Set Security', desc: 'Choose a password and configure permission settings.' },
+      { step: 3, title: 'Download', desc: 'Download your secured PDF with encryption applied.' },
+    ],
+    faq: [
+      { question: 'How secure is the encryption?', answer: 'We use industry-standard AES-256 encryption, the same level used by banks and governments to protect sensitive data.' },
+      { question: 'Can I restrict printing but allow viewing?', answer: 'Yes, you can set granular permissions — allow viewing but restrict printing, copying, or editing.' },
+      { question: 'What if I forget the password?', answer: 'We cannot recover forgotten passwords. Please store your passwords securely. This ensures your documents stay protected.' },
+    ],
+  },
+  {
+    slug: 'extract-data-pdf',
+    viewId: 'extract-data',
+    title: 'Extract Data from PDF',
+    metaTitle: 'Extract Data from PDF Online Free - AI Data Extraction',
+    metaDescription: 'Extract text, tables, and data from PDF documents using AI. Smart data extraction that handles forms, invoices, and reports. Free online tool.',
+    keywords: ['extract data from pdf', 'pdf data extraction', 'extract text from pdf', 'pdf table extraction', 'ai pdf extraction', 'extract pdf data'],
+    h1: 'Extract Data from PDF — AI Powered',
+    subtitle: 'Use AI to intelligently extract text, tables, form data, and structured information from any PDF document.',
+    icon: 'Database',
+    color: '#F97316',
+    features: [
+      { title: 'AI-Powered', desc: 'Smart extraction that understands document structure and context.' },
+      { title: 'Table Extraction', desc: 'Extract tables from PDFs into clean, structured data formats.' },
+      { title: 'Form Data', desc: 'Pull form field data from filled PDF forms automatically.' },
+      { title: 'Multiple Formats', desc: 'Export extracted data as JSON, CSV, or structured text.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF document containing data you want to extract.' },
+      { step: 2, title: 'AI Processing', desc: 'Our AI analyzes the document structure and extracts data intelligently.' },
+      { step: 3, title: 'Download Data', desc: 'Review and download your extracted data in your preferred format.' },
+    ],
+    faq: [
+      { question: 'What types of data can be extracted?', answer: 'You can extract text, tables, form field values, key-value pairs, and structured data from invoices, reports, and forms.' },
+      { question: 'How accurate is AI extraction?', answer: 'Our AI achieves 95%+ accuracy for structured documents like invoices and forms. Complex layouts may require minor manual review.' },
+    ],
+  },
+  {
+    slug: 'translate-pdf',
+    viewId: 'translate-pdf',
+    title: 'Translate PDF',
+    metaTitle: 'Translate PDF Online Free - AI PDF Translation Tool',
+    metaDescription: 'Translate PDF documents into 50+ languages using AI. Preserve original layout and formatting. Free online PDF translator with high accuracy.',
+    keywords: ['translate pdf', 'pdf translator', 'translate pdf online', 'pdf translation', 'translate document', 'ai pdf translator', 'free pdf translator'],
+    h1: 'Translate PDF into Any Language',
+    subtitle: 'AI-powered PDF translation that preserves your original layout and formatting. Translate to 50+ languages instantly.',
+    icon: 'Languages',
+    color: '#14B8A6',
+    features: [
+      { title: '50+ Languages', desc: 'Translate between English, Spanish, French, German, Chinese, and 50+ more.' },
+      { title: 'Layout Preservation', desc: 'Original formatting, images, and layout are maintained after translation.' },
+      { title: 'AI-Powered', desc: 'Neural machine translation for natural, accurate results.' },
+      { title: 'Full Document', desc: 'Translate entire documents or select specific pages.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF document you want to translate.' },
+      { step: 2, title: 'Choose Language', desc: 'Select source and target languages for translation.' },
+      { step: 3, title: 'Translate & Download', desc: 'AI translates your PDF while preserving layout. Download the result.' },
+    ],
+    faq: [
+      { question: 'What languages are supported?', answer: 'We support 50+ languages including English, Spanish, French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more.' },
+      { question: 'Will the formatting be preserved?', answer: 'Our AI translation preserves the original layout, fonts, images, and formatting as closely as possible.' },
+      { question: 'How accurate is the translation?', answer: 'Our neural translation achieves high accuracy for most language pairs. Technical or specialized content may have minor variations.' },
+    ],
+  },
+  {
+    slug: 'delete-blank-pages-pdf',
+    viewId: 'delete-blank-pages',
+    title: 'Delete Blank Pages',
+    metaTitle: 'Delete Blank Pages from PDF Online Free',
+    metaDescription: 'Remove blank pages from PDF documents automatically. Smart detection finds and deletes empty pages. Free online tool, no signup required.',
+    keywords: ['delete blank pages pdf', 'remove blank pages pdf', 'pdf blank page remover', 'delete empty pages pdf', 'clean pdf'],
+    h1: 'Delete Blank Pages from PDF',
+    subtitle: 'Automatically detect and remove blank pages from your PDF documents. Clean up your files in seconds.',
+    icon: 'FileX',
+    color: '#64748B',
+    features: [
+      { title: 'Auto Detection', desc: 'Smart algorithms automatically identify blank and near-blank pages.' },
+      { title: 'Manual Selection', desc: 'Review detected pages and manually confirm or adjust selection.' },
+      { title: 'Batch Processing', desc: 'Process large documents with hundreds of pages quickly.' },
+      { title: 'Safe Removal', desc: 'Preview pages before deletion to ensure nothing important is removed.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF with blank pages you want to remove.' },
+      { step: 2, title: 'Detect Blanks', desc: 'Our tool automatically identifies all blank pages.' },
+      { step: 3, title: 'Review & Delete', desc: 'Review the detected pages and confirm deletion.' },
+    ],
+    faq: [
+      { question: 'How does blank page detection work?', answer: 'Our algorithm analyzes each page for text content, images, and visible elements. Pages below a threshold are flagged as blank.' },
+      { question: 'Can it detect pages with only whitespace?', answer: 'Yes, our detection catches both completely blank pages and pages with only invisible whitespace characters.' },
+    ],
+  },
+  {
+    slug: 'sign-document-pdf',
+    viewId: 'sign-document',
+    title: 'Sign Document',
+    metaTitle: 'Sign PDF Documents Online Free - Electronic Signature',
+    metaDescription: 'Sign PDF documents with electronic signatures online for free. Draw, type, or upload your signature. Legally binding e-signatures, no signup needed.',
+    keywords: ['sign pdf', 'electronic signature', 'esign pdf', 'digital signature pdf', 'sign document online', 'pdf signature', 'free esignature'],
+    h1: 'Sign PDF Documents Online',
+    subtitle: 'Add your electronic signature to any PDF document. Draw, type, or upload your signature — fast, free, and legally binding.',
+    icon: 'PenTool',
+    color: '#D946EF',
+    features: [
+      { title: 'Draw Signature', desc: 'Draw your signature using your mouse, trackpad, or touchscreen.' },
+      { title: 'Type Signature', desc: 'Type your name and choose from multiple script font styles.' },
+      { title: 'Upload Signature', desc: 'Upload a pre-made signature image (PNG with transparency).' },
+      { title: 'Place Anywhere', desc: 'Drag and position your signature anywhere on the document.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF document you need to sign.' },
+      { step: 2, title: 'Create Signature', desc: 'Draw, type, or upload your signature.' },
+      { step: 3, title: 'Place & Download', desc: 'Position your signature on the document and download.' },
+    ],
+    faq: [
+      { question: 'Are electronic signatures legally binding?', answer: 'Yes, electronic signatures are legally recognized in most countries including the US (ESIGN Act), EU (eIDAS), and many others.' },
+      { question: 'Can I add multiple signatures?', answer: 'Yes, you can add multiple signatures to the same document, perfect for contracts requiring signatures from multiple parties.' },
+    ],
+  },
+  {
+    slug: 'crop-pdf',
+    viewId: 'crop-pdf',
+    title: 'Crop PDF',
+    metaTitle: 'Crop PDF Pages Online Free - Resize & Trim PDF',
+    metaDescription: 'Crop, resize, and trim PDF page margins online for free. Remove unwanted white space and adjust page dimensions easily.',
+    keywords: ['crop pdf', 'pdf cropper', 'trim pdf', 'resize pdf pages', 'crop pdf margins', 'pdf page trimmer', 'cut pdf pages'],
+    h1: 'Crop PDF Pages Online',
+    subtitle: 'Trim margins, remove whitespace, and resize PDF pages to your exact specifications. Simple and precise.',
+    icon: 'Crop',
+    color: '#84CC16',
+    features: [
+      { title: 'Visual Crop Tool', desc: 'See your PDF and draw a crop area directly on the page.' },
+      { title: 'Preset Sizes', desc: 'Choose from standard paper sizes (Letter, A4, Legal, etc.).' },
+      { title: 'Margin Removal', desc: 'Automatically detect and remove excess white margins.' },
+      { title: 'Batch Crop', desc: 'Apply the same crop settings to all pages at once.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Upload PDF', desc: 'Select the PDF file you want to crop.' },
+      { step: 2, title: 'Set Crop Area', desc: 'Draw crop boundaries or enter precise dimensions.' },
+      { step: 3, title: 'Crop & Download', desc: 'Apply cropping and download your resized PDF.' },
+    ],
+    faq: [
+      { question: 'Can I crop specific pages only?', answer: 'Yes, you can apply cropping to all pages or select specific pages to crop.' },
+      { question: 'Does cropping reduce file size?', answer: 'Cropping removes visual content outside the crop area, which can reduce file size, especially if removing large margins with images.' },
+    ],
+  },
+  {
+    slug: 'batch-print-pdf',
+    viewId: 'batch-print',
+    title: 'Batch Print PDF',
+    metaTitle: 'Batch Print Multiple PDFs Online Free',
+    metaDescription: 'Print multiple PDF files at once with batch printing. Queue, organize, and print your PDF documents efficiently. Free online tool.',
+    keywords: ['batch print pdf', 'print multiple pdf', 'pdf batch printing', 'print queue pdf', 'bulk print pdf'],
+    h1: 'Batch Print PDF Documents',
+    subtitle: 'Queue and print multiple PDF documents at once. Organize your print jobs and save time with batch processing.',
+    icon: 'Printer',
+    color: '#EF4444',
+    features: [
+      { title: 'Multi-File Queue', desc: 'Add multiple PDF files to your print queue at once.' },
+      { title: 'Print Settings', desc: 'Configure page size, orientation, and copies for each document.' },
+      { title: 'Order Control', desc: 'Rearrange the print queue order before printing.' },
+      { title: 'Preview', desc: 'Preview each document before sending to print.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Add PDFs', desc: 'Upload multiple PDF files to the print queue.' },
+      { step: 2, title: 'Configure Settings', desc: 'Set print options and arrange the queue order.' },
+      { step: 3, title: 'Print All', desc: 'Send all documents to your printer in sequence.' },
+    ],
+    faq: [
+      { question: 'Can I set different print settings for each file?', answer: 'Yes, you can configure individual print settings (copies, pages, orientation) for each document in the queue.' },
+    ],
+  },
+  {
+    slug: 'qr-generator',
+    viewId: 'qr-generator',
+    title: 'QR Code Generator',
+    metaTitle: 'Free QR Code Generator Online - 12+ QR Types with Custom Styling',
+    metaDescription: 'Generate QR codes online for free. 12+ QR code types including URL, WiFi, vCard, Email, SMS, and more. Custom colors, logos, and styles. Download as PNG or SVG.',
+    keywords: ['qr code generator', 'qr generator', 'make qr code', 'free qr code', 'qr code maker', 'custom qr code', 'wifi qr code', 'vcard qr code', 'qr code with logo'],
+    h1: 'QR Code Generator — 12+ Types',
+    subtitle: 'Create beautiful, custom QR codes for URLs, WiFi, vCards, emails, and more. Add your logo, change colors, and download in high quality.',
+    icon: 'QrCode',
+    color: '#F97316',
+    features: [
+      { title: '12+ QR Types', desc: 'URL, WiFi, vCard, Email, Phone, SMS, Location, and more.' },
+      { title: 'Custom Styling', desc: 'Change colors, add gradients, rounded corners, and custom dot styles.' },
+      { title: 'Logo Insertion', desc: 'Add your brand logo in the center of the QR code.' },
+      { title: 'High Quality Export', desc: 'Download as PNG, SVG, or PDF for print and digital use.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Choose QR Type', desc: 'Select the type of QR code you want to generate.' },
+      { step: 2, title: 'Enter Data', desc: 'Fill in the information (URL, WiFi credentials, contact info, etc.).' },
+      { step: 3, title: 'Customize & Download', desc: 'Style your QR code and download it in your preferred format.' },
+    ],
+    faq: [
+      { question: 'What QR code types are available?', answer: 'We support URL, WiFi, vCard (Contact), Email, Phone, SMS, Location, Calendar Event, Text, Bitcoin, and more — 12+ types in total.' },
+      { question: 'Can I add my logo to a QR code?', answer: 'Yes! Upload your logo and it will be placed in the center of the QR code. Our algorithm ensures the QR code remains scannable.' },
+      { question: 'Are the QR codes free to use?', answer: 'Yes, all generated QR codes are completely free with no expiration. They work forever without any subscription.' },
+      { question: 'What formats can I download?', answer: 'Download your QR code as PNG (for web), SVG (for print), or PDF (for documents). High resolution available.' },
+    ],
+  },
+  // ═══════════════════════════════════════════════════════════
+  // QR CODE SUB-TYPE PAGES (Simple Category)
+  // ═══════════════════════════════════════════════════════════
+  {
+    slug: 'qr-code-url',
+    viewId: 'qr-generator',
+    title: 'URL QR Code',
+    metaTitle: 'Free URL QR Code Generator - Create QR Codes for Web Links',
+    metaDescription: 'Generate QR codes for website URLs instantly. Create scannable QR codes that link to any web page. Free, no signup, custom colors and logo support.',
+    keywords: ['url qr code', 'qr code for website', 'web link qr code', 'url to qr code', 'qr code generator url', 'website qr code', 'link qr code generator'],
+    h1: 'URL QR Code Generator',
+    subtitle: 'Turn any website link into a scannable QR code. Perfect for business cards, flyers, posters, and digital displays.',
+    icon: 'Globe',
+    color: '#3B82F6',
+    features: [
+      { title: 'Any URL', desc: 'Generate QR codes for any website, landing page, or online resource.' },
+      { title: 'Short URLs', desc: 'Works with both long and short URLs. Shorter URLs create cleaner QR codes.' },
+      { title: 'Custom Styling', desc: 'Change colors, add your logo, and customize the QR code design.' },
+      { title: 'Track Scans', desc: 'Use with URL shorteners to track how many people scan your code.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Paste Your URL', desc: 'Enter the website link you want the QR code to point to.' },
+      { step: 2, title: 'Customize Design', desc: 'Choose colors, add a logo, and adjust the style.' },
+      { step: 3, title: 'Download QR Code', desc: 'Download as PNG, SVG, or PDF for print and digital use.' },
+    ],
+    faq: [
+      { question: 'Can I change the URL later?', answer: 'Standard QR codes are static and cannot be changed after creation. For editable URLs, use a URL shortener service to redirect the link.' },
+      { question: 'Is there a character limit?', answer: 'QR codes can encode up to 4,296 characters. However, shorter URLs create denser and more reliable QR codes.' },
+      { question: 'Will the QR code work on all phones?', answer: 'Yes! URL QR codes are universally supported by all smartphone cameras and QR scanning apps.' },
+    ],
+  },
+  {
+    slug: 'qr-code-wifi',
+    viewId: 'qr-generator',
+    title: 'WiFi QR Code',
+    metaTitle: 'Free WiFi QR Code Generator - Create QR Codes for WiFi Access',
+    metaDescription: 'Generate WiFi QR codes so guests can connect instantly by scanning. No more typing passwords. Free WiFi QR code generator with WPA/WEP support.',
+    keywords: ['wifi qr code', 'qr code for wifi', 'wifi password qr code', 'wifi qr code generator', 'scan to connect wifi', 'wifi access qr code', 'create wifi qr code'],
+    h1: 'WiFi QR Code Generator',
+    subtitle: 'Let guests connect to your WiFi instantly by scanning a QR code. No more typing long passwords or sharing them verbally.',
+    icon: 'Wifi',
+    color: '#10B981',
+    features: [
+      { title: 'One-Scan Connect', desc: 'Guests scan the QR code and automatically connect to your WiFi.' },
+      { title: 'WPA/WEP/WPA2', desc: 'Supports all common WiFi security protocols.' },
+      { title: 'Hidden Networks', desc: 'Works with both visible and hidden WiFi networks.' },
+      { title: 'Print Ready', desc: 'Download high-quality QR codes perfect for printing on signs and cards.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter WiFi Details', desc: 'Type your network name (SSID), password, and security type.' },
+      { step: 2, title: 'Customize Design', desc: 'Add colors and styling to match your branding.' },
+      { step: 3, title: 'Print & Display', desc: 'Download and print the QR code for your guests to scan.' },
+    ],
+    faq: [
+      { question: 'Is my WiFi password secure?', answer: 'The password is encoded in the QR code. Anyone who scans it can connect. Only share it with people you trust, just like sharing your password verbally.' },
+      { question: 'Does it work with 5GHz networks?', answer: 'Yes, the QR code works with both 2.4GHz and 5GHz networks as long as they share the same SSID and password.' },
+      { question: 'Can I use this for my business?', answer: 'Absolutely! WiFi QR codes are perfect for cafes, hotels, offices, and any business that offers guest WiFi.' },
+    ],
+  },
+  {
+    slug: 'qr-code-text',
+    viewId: 'qr-generator',
+    title: 'Text QR Code',
+    metaTitle: 'Free Text QR Code Generator - Encode Text into QR Codes',
+    metaDescription: 'Encode any text into a QR code. Create QR codes for messages, quotes, instructions, and more. Free online text QR code generator.',
+    keywords: ['text qr code', 'qr code for text', 'text to qr code', 'qr code message', 'encode text qr code', 'plain text qr code generator'],
+    h1: 'Text QR Code Generator',
+    subtitle: 'Encode any text message into a scannable QR code. Perfect for quotes, instructions, secret messages, and more.',
+    icon: 'Type',
+    color: '#8B5CF6',
+    features: [
+      { title: 'Any Text', desc: 'Encode up to 4,296 characters of plain text in a single QR code.' },
+      { title: 'Multi-Language', desc: 'Support for all languages and special characters including Unicode.' },
+      { title: 'No Internet Needed', desc: 'Text QR codes can be read offline without any internet connection.' },
+      { title: 'Creative Uses', desc: 'Perfect for scavenger hunts, secret messages, product info, and more.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Type Your Text', desc: 'Enter the text message you want to encode.' },
+      { step: 2, title: 'Customize Design', desc: 'Choose colors and styling for your QR code.' },
+      { step: 3, title: 'Download', desc: 'Download your text QR code in PNG, SVG, or PDF.' },
+    ],
+    faq: [
+      { question: 'How much text can I encode?', answer: 'Up to 4,296 alphanumeric characters or 1,817 characters with special characters and Unicode support.' },
+      { question: 'Can I include emojis?', answer: 'Yes, our generator supports Unicode characters including emojis. However, not all QR scanners display them correctly.' },
+    ],
+  },
+  {
+    slug: 'qr-code-email',
+    viewId: 'qr-generator',
+    title: 'Email QR Code',
+    metaTitle: 'Free Email QR Code Generator - Create QR Codes for Email Addresses',
+    metaDescription: 'Generate QR codes for email addresses. Scanning opens the email app with the address pre-filled. Free email QR code maker with subject and body support.',
+    keywords: ['email qr code', 'qr code for email', 'email address qr code', 'qr code email generator', 'mailto qr code', 'scan to email qr code'],
+    h1: 'Email QR Code Generator',
+    subtitle: 'Create QR codes that open an email with the address, subject, and body pre-filled when scanned. Perfect for contact and feedback.',
+    icon: 'Mail',
+    color: '#EF4444',
+    features: [
+      { title: 'Pre-Filled Email', desc: 'Scanning opens the email app with address, subject, and body filled in.' },
+      { title: 'Feedback Collection', desc: 'Perfect for collecting feedback at events, restaurants, and stores.' },
+      { title: 'Customer Support', desc: 'Let customers scan to instantly email your support team.' },
+      { title: 'Custom Subject', desc: 'Set a default subject line so you know where the email came from.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter Email Address', desc: 'Type the email address you want the QR code to open.' },
+      { step: 2, title: 'Set Subject & Body', desc: 'Optionally add a pre-filled subject line and email body.' },
+      { step: 3, title: 'Download QR Code', desc: 'Generate and download your email QR code.' },
+    ],
+    faq: [
+      { question: 'What happens when someone scans it?', answer: 'Their phone\'s email app opens with the email address, subject, and body pre-filled. They just need to tap send.' },
+      { question: 'Can I add CC and BCC?', answer: 'Currently, we support To, Subject, and Body fields. CC and BCC support is coming soon.' },
+    ],
+  },
+  {
+    slug: 'qr-code-phone',
+    viewId: 'qr-generator',
+    title: 'Phone QR Code',
+    metaTitle: 'Free Phone QR Code Generator - Create QR Codes for Phone Numbers',
+    metaDescription: 'Generate QR codes for phone numbers. Scanning instantly dials the number. Free phone call QR code maker for business cards and marketing materials.',
+    keywords: ['phone qr code', 'qr code for phone number', 'call qr code', 'phone number qr code', 'tel qr code', 'scan to call qr code'],
+    h1: 'Phone Number QR Code Generator',
+    subtitle: 'Create QR codes that instantly dial a phone number when scanned. Perfect for business cards, ads, and customer support.',
+    icon: 'Phone',
+    color: '#F59E0B',
+    features: [
+      { title: 'One-Tap Call', desc: 'Scanning the QR code instantly opens the phone dialer with the number.' },
+      { title: 'International Numbers', desc: 'Support for country codes and international phone number formats.' },
+      { title: 'Business Cards', desc: 'Add to business cards so contacts can call you with one scan.' },
+      { title: 'Customer Hotlines', desc: 'Display on posters and ads for instant customer support calls.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter Phone Number', desc: 'Type the phone number including country code (e.g., +1-555-0123).' },
+      { step: 2, title: 'Customize Design', desc: 'Style your QR code with colors and branding.' },
+      { step: 3, title: 'Download & Share', desc: 'Download the QR code and add it to your materials.' },
+    ],
+    faq: [
+      { question: 'Does it work with international numbers?', answer: 'Yes, include the country code (e.g., +1 for US, +44 for UK) and the QR code will work globally.' },
+      { question: 'What happens when scanned?', answer: 'The phone\'s dialer opens with the number pre-filled. The user just taps the call button.' },
+    ],
+  },
+  {
+    slug: 'qr-code-sms',
+    viewId: 'qr-generator',
+    title: 'SMS QR Code',
+    metaTitle: 'Free SMS QR Code Generator - Create QR Codes for Text Messages',
+    metaDescription: 'Generate QR codes that open SMS with a pre-filled message. Scanning starts a text message instantly. Free SMS QR code maker for marketing and events.',
+    keywords: ['sms qr code', 'qr code for sms', 'text message qr code', 'qr code sms generator', 'scan to text qr code', 'sms qr code maker'],
+    h1: 'SMS QR Code Generator',
+    subtitle: 'Create QR codes that open a text message with the number and message pre-filled. Perfect for campaigns, contests, and customer engagement.',
+    icon: 'MessageSquare',
+    color: '#06B6D4',
+    features: [
+      { title: 'Pre-Filled SMS', desc: 'Scanning opens the messaging app with number and text pre-filled.' },
+      { title: 'Campaign Codes', desc: 'Create codes for text-to-win campaigns and marketing programs.' },
+      { title: 'Keyword Support', desc: 'Pre-fill keywords so users just tap send to participate.' },
+      { title: 'Event Engagement', desc: 'Let attendees text feedback or questions by scanning a code.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter Phone Number', desc: 'Type the phone number to send the SMS to.' },
+      { step: 2, title: 'Write Message', desc: 'Pre-fill a message or keyword for the user to send.' },
+      { step: 3, title: 'Download QR Code', desc: 'Generate and download your SMS QR code.' },
+    ],
+    faq: [
+      { question: 'Does sending the SMS cost money?', answer: 'Standard messaging rates apply. The QR code just opens the messaging app — the user decides whether to send.' },
+      { question: 'Can I pre-fill a long message?', answer: 'Keep messages short and concise for the best experience. Most phones handle up to 160 characters well.' },
+    ],
+  },
+  {
+    slug: 'qr-code-whatsapp-chat',
+    viewId: 'qr-generator',
+    title: 'WhatsApp Chat QR Code',
+    metaTitle: 'Free WhatsApp QR Code Generator - Create QR Codes for WhatsApp Chat',
+    metaDescription: 'Generate QR codes that open a WhatsApp chat with any number. No need to save the contact first. Free WhatsApp chat QR code maker.',
+    keywords: ['whatsapp qr code', 'qr code for whatsapp', 'whatsapp chat qr code', 'whatsapp qr code generator', 'scan to whatsapp', 'whatsapp link qr code'],
+    h1: 'WhatsApp Chat QR Code Generator',
+    subtitle: 'Create QR codes that open a WhatsApp chat instantly — no need to save the contact first. Perfect for businesses and networking.',
+    icon: 'MessageCircle',
+    color: '#25D366',
+    features: [
+      { title: 'Direct Chat', desc: 'Scanning opens a WhatsApp chat without saving the number first.' },
+      { title: 'Business Use', desc: 'Display on storefronts, websites, and business cards for instant customer chat.' },
+      { title: 'International', desc: 'Works with WhatsApp numbers from any country.' },
+      { title: 'No App Download', desc: 'Opens WhatsApp Web if the app isn\'t installed on the device.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter WhatsApp Number', desc: 'Type the WhatsApp number with country code (e.g., +1-555-0123).' },
+      { step: 2, title: 'Add Default Message', desc: 'Optionally pre-fill a message for the user to start with.' },
+      { step: 3, title: 'Download QR Code', desc: 'Generate and print your WhatsApp QR code.' },
+    ],
+    faq: [
+      { question: 'Does the number need to be saved in contacts?', answer: 'No! That\'s the beauty of it. Scanning the QR code opens a chat directly without saving the number.' },
+      { question: 'Can I add a pre-filled message?', answer: 'Yes, you can add a default message that appears in the chat input when the QR code is scanned.' },
+    ],
+  },
+  {
+    slug: 'qr-code-whatsapp-message',
+    viewId: 'qr-generator',
+    title: 'WhatsApp Message QR Code',
+    metaTitle: 'Free WhatsApp Message QR Code - Pre-Filled WhatsApp Messages',
+    metaDescription: 'Generate QR codes that open WhatsApp with a pre-filled message. Scanning starts a WhatsApp chat with your custom text ready to send.',
+    keywords: ['whatsapp message qr code', 'whatsapp pre-filled message qr', 'whatsapp link with message', 'wa.me qr code', 'whatsapp direct message qr'],
+    h1: 'WhatsApp Message QR Code Generator',
+    subtitle: 'Create QR codes that open WhatsApp with a pre-filled message. Customers scan, tap send, and you get the exact message you expect.',
+    icon: 'MessageCircle',
+    color: '#128C7E',
+    features: [
+      { title: 'Pre-Filled Text', desc: 'The message is ready to send when the chat opens. No typing required.' },
+      { title: 'Structured Messages', desc: 'Pre-fill order details, feedback templates, or support requests.' },
+      { title: 'Campaign Tracking', desc: 'Use different messages for different campaigns to track source.' },
+      { title: 'Error Reduction', desc: 'Ensure customers send the right information every time.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter Phone Number', desc: 'Type the WhatsApp number with country code.' },
+      { step: 2, title: 'Write Your Message', desc: 'Compose the pre-filled message for users to send.' },
+      { step: 3, title: 'Download & Share', desc: 'Generate the QR code and display it for scanning.' },
+    ],
+    faq: [
+      { question: 'How is this different from WhatsApp Chat QR?', answer: 'WhatsApp Chat QR just opens a blank chat. This version pre-fills a specific message, so the user sees the text and just taps send.' },
+      { question: 'Can I use this for order inquiries?', answer: 'Absolutely! Pre-fill messages like "I want to order [item]" so customers can quickly reach out with the right format.' },
+    ],
+  },
+  // ═══════════════════════════════════════════════════════════
+  // QR CODE SUB-TYPE PAGES (Advanced Category)
+  // ═══════════════════════════════════════════════════════════
+  {
+    slug: 'qr-code-vcard',
+    viewId: 'qr-generator',
+    title: 'vCard QR Code',
+    metaTitle: 'Free vCard QR Code Generator - Create Contact QR Codes',
+    metaDescription: 'Generate vCard QR codes that add your contact info to any phone instantly. Name, phone, email, address, and more in one scan. Free vCard QR code maker.',
+    keywords: ['vcard qr code', 'contact qr code', 'qr code for contact info', 'vcard qr generator', 'business card qr code', 'me card qr code', 'digital business card qr'],
+    h1: 'vCard QR Code Generator',
+    subtitle: 'Create digital business cards with vCard QR codes. One scan adds your full contact info — name, phone, email, company, and more — to any phone.',
+    icon: 'User',
+    color: '#7C3AED',
+    features: [
+      { title: 'Full Contact Info', desc: 'Encode name, phone, email, company, job title, address, and website.' },
+      { title: 'Instant Add', desc: 'Scanning instantly adds the contact to the phone\'s address book.' },
+      { title: 'Digital Business Card', desc: 'Replace paper business cards with a scannable QR code.' },
+      { title: 'vCard 3.0 Standard', desc: 'Uses the universal vCard format supported by all phones and apps.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter Contact Details', desc: 'Fill in your name, phone, email, company, and other info.' },
+      { step: 2, title: 'Customize Design', desc: 'Style the QR code with your brand colors and logo.' },
+      { step: 3, title: 'Download & Share', desc: 'Print on business cards, resumes, email signatures, and more.' },
+    ],
+    faq: [
+      { question: 'What is a vCard?', answer: 'vCard (VCF) is a standard file format for electronic business cards. It stores contact information and is supported by all phones, email clients, and contact apps.' },
+      { question: 'What info can I include?', answer: 'Name, phone numbers, email, company, job title, website, address, and notes. All standard contact fields are supported.' },
+      { question: 'Can I add a photo?', answer: 'Photos can make the QR code very large and hard to scan. We recommend including text info only for best results.' },
+    ],
+  },
+  {
+    slug: 'qr-code-skype',
+    viewId: 'qr-generator',
+    title: 'Skype QR Code',
+    metaTitle: 'Free Skype QR Code Generator - Create QR Codes for Skype Calls',
+    metaDescription: 'Generate QR codes that open a Skype call or chat with one scan. Free Skype QR code maker for business cards, websites, and remote team communication.',
+    keywords: ['skype qr code', 'qr code for skype', 'skype call qr code', 'skype qr code generator', 'scan to skype', 'skype contact qr code'],
+    h1: 'Skype Call QR Code Generator',
+    subtitle: 'Create QR codes that open a Skype call or chat instantly. Perfect for remote teams, consultants, and international business communication.',
+    icon: 'Video',
+    color: '#00AFF0',
+    features: [
+      { title: 'One-Scan Call', desc: 'Scanning opens Skype and starts a call or chat with the contact.' },
+      { title: 'Skype Username', desc: 'Works with any Skype username — no phone number needed.' },
+      { title: 'Call or Chat', desc: 'Choose whether scanning starts a call or opens a chat window.' },
+      { title: 'International', desc: 'Free Skype-to-Skype calls work globally — no long distance charges.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enter Skype Username', desc: 'Type the Skype username you want the QR code to call.' },
+      { step: 2, title: 'Choose Action', desc: 'Select whether to start a call or open a chat.' },
+      { step: 3, title: 'Download QR Code', desc: 'Generate and download your Skype QR code.' },
+    ],
+    faq: [
+      { question: 'Does the scanner need Skype installed?', answer: 'Yes, the scanner needs Skype installed on their device. If not installed, they\'ll be directed to the Skype download page.' },
+      { question: 'Can I use a phone number instead of username?', answer: 'Our QR code uses Skype usernames for the most reliable connection. Phone numbers may not work with all Skype accounts.' },
+    ],
+  },
+  {
+    slug: 'qr-code-bitcoin',
+    viewId: 'qr-generator',
+    title: 'Bitcoin/Crypto QR Code',
+    metaTitle: 'Free Bitcoin QR Code Generator - Create QR Codes for Crypto Payments',
+    metaDescription: 'Generate QR codes for Bitcoin and cryptocurrency payments. Scanning opens the wallet with address and amount pre-filled. Free crypto QR code maker.',
+    keywords: ['bitcoin qr code', 'crypto qr code', 'cryptocurrency qr code', 'btc qr code', 'ethereum qr code', 'bitcoin payment qr code', 'crypto wallet qr code'],
+    h1: 'Bitcoin & Crypto QR Code Generator',
+    subtitle: 'Create QR codes for cryptocurrency payments. Scanning opens the wallet with your address and amount pre-filled. Supports Bitcoin, Ethereum, and more.',
+    icon: 'Bitcoin',
+    color: '#F7931A',
+    features: [
+      { title: 'Multi-Currency', desc: 'Support for Bitcoin (BTC), Ethereum (ETH), Litecoin (LTC), and more.' },
+      { title: 'Pre-Filled Amount', desc: 'Set a specific payment amount so customers scan and pay instantly.' },
+      { title: 'Wallet Address', desc: 'Encode any crypto wallet address into a scannable QR code.' },
+      { title: 'Payment Labels', desc: 'Add a message or label to identify the payment purpose.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Select Crypto', desc: 'Choose the cryptocurrency (Bitcoin, Ethereum, etc.).' },
+      { step: 2, title: 'Enter Wallet Address', desc: 'Paste your wallet address and optional payment amount.' },
+      { step: 3, title: 'Download QR Code', desc: 'Generate and display your payment QR code.' },
+    ],
+    faq: [
+      { question: 'Which cryptocurrencies are supported?', answer: 'We support Bitcoin (BTC), Ethereum (ETH), Litecoin (LTC), Bitcoin Cash (BCH), Dash, and many more popular cryptocurrencies.' },
+      { question: 'Is it safe to share my wallet address?', answer: 'Yes, wallet addresses are public and can be freely shared. They can only receive funds — nobody can withdraw from your wallet using the address.' },
+      { question: 'Can I set a specific payment amount?', answer: 'Yes, you can pre-fill a specific amount in the QR code. The sender\'s wallet will show this amount when they scan.' },
+    ],
+  },
+  // ═══════════════════════════════════════════════════════════
+  // QR CODE SUB-TYPE PAGES (Quick Links Category)
+  // ═══════════════════════════════════════════════════════════
+  {
+    slug: 'qr-code-youtube',
+    viewId: 'qr-generator',
+    title: 'YouTube QR Code',
+    metaTitle: 'Free YouTube QR Code Generator - Create QR Codes for YouTube Videos',
+    metaDescription: 'Generate QR codes that open YouTube videos, channels, or playlists instantly. Free YouTube QR code maker for marketing, events, and promotions.',
+    keywords: ['youtube qr code', 'qr code for youtube video', 'youtube video qr code', 'youtube qr code generator', 'scan to watch youtube', 'youtube channel qr code'],
+    h1: 'YouTube QR Code Generator',
+    subtitle: 'Create QR codes that open YouTube videos, channels, or playlists with one scan. Perfect for events, marketing, and educational content.',
+    icon: 'Youtube',
+    color: '#FF0000',
+    features: [
+      { title: 'Direct to Video', desc: 'Scanning opens the YouTube video or app instantly — no searching needed.' },
+      { title: 'Channels & Playlists', desc: 'Link to entire channels, playlists, or specific videos.' },
+      { title: 'Event Promotion', desc: 'Display on screens, flyers, and posters at live events.' },
+      { title: 'Educational Content', desc: 'Link students directly to tutorial videos and lectures.' },
+    ],
+    howItWorks: [
+      { step: 1, title: 'Paste YouTube URL', desc: 'Copy the YouTube video, channel, or playlist URL.' },
+      { step: 2, title: 'Customize Design', desc: 'Style your QR code with colors and branding.' },
+      { step: 3, title: 'Download & Display', desc: 'Download and add the QR code to your materials.' },
+    ],
+    faq: [
+      { question: 'Does it open in the YouTube app?', answer: 'On mobile, it opens the YouTube app if installed. Otherwise, it opens in the browser. Both work seamlessly.' },
+      { question: 'Can I link to a playlist?', answer: 'Yes! You can link to individual videos, full channels, or specific playlists using their URLs.' },
+      { question: 'Can I track how many people scan it?', answer: 'Standard QR codes don\'t have built-in tracking. Use a URL shortener (like Bitly) before creating the QR code for scan analytics.' },
+    ],
+  },
+];
+
+// Helper to find tool by slug
+export function getToolBySlug(slug: string): ToolSEO | undefined {
+  return toolsSEO.find(t => t.slug === slug);
+}
+
+// Get all slugs for static generation
+export function getAllSlugs(): string[] {
+  return toolsSEO.map(t => t.slug);
+}
+---STORE---
+import { create } from 'zustand'
+import { loadSettings, formatDateWithFormat } from '@/hooks/use-settings'
+
+export type ViewType = 'home' | 'all-tools' | 'pdf-viewer' | 'combine-files' | 'batch-print' | 'convert' | 'ocr' | 'compress' | 'qr-generator' | 'extract-text' | 'watermark' | 'security' | 'header-footer' | 'bates-number' | 'background' | 'crop' | 'sign' | 'settings'
+
+export interface PdfFile {
+  id: string
+  name: string
+  originalName: string
+  size: number
+  mimeType: string
+  pages: number
+  starred: boolean
+  textContent: string | null
+  filePath: string
+  // New production fields
+  fileHash?: string | null
+  uploadStatus?: string
+  metadata?: string | null
+  virusScanStatus?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+}
+
+export interface UploadProgress {
+  fileName: string
+  fileSize: number
+  progress: number
+  status: 'validating' | 'uploading' | 'success' | 'error' | 'duplicate'
+  error?: string
+  errorCode?: string
+  duplicateInfo?: {
+    id: string
+    name: string
+    originalName: string
+    size: number
+    pages: number
+    createdAt: string
+  }
+  warnings?: { code: string; message: string }[]
+}
+
+// Keep backward-compatible alias
+export type PDFFile = PdfFile
+
+/** Format byte size to human-readable string (delegates to shared utility) */
+export { formatStorageSize as formatFileSize } from '@/lib/bigint-utils'
+
+/** Format date string to human-readable relative/absolute time using user settings */
+export function formatDate(dateStr: string): string {
+  try {
+    const settings = loadSettings()
+    return formatDateWithFormat(dateStr, settings.dateFormat)
+---globals.css head---
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
