@@ -166,3 +166,49 @@ Stage Summary:
 - Watermark words are intelligently excluded from the text layer so removed watermarks don't reappear as searchable text.
 - Only "flattened" output explicitly discards text (clear user choice).
 - Files modified: src/lib/pdf-cleanup/detect.ts (exports + extractWordBoxes), src/lib/pdf-cleanup/rebuild.ts (buildSearchablePdfWithOriginalText + isWatermarkWord), src/lib/pdf-cleanup/index.ts (three-strategy orchestrator), src/lib/pdf-cleanup/types.ts (OUTPUT_FORMATS descriptions), src/components/pdf-element/cleanup-pdf.tsx (Run OCR hint).
+
+---
+Task ID: 7
+Agent: main (Z.ai Code)
+Task: Better watermark detection — add content-stream-based multi-signal heuristics (repeated bboxes, repeated font, repeated rotation, repeated transparency group, object frequency across pages, color similarity, template matching).
+
+Work Log:
+- Built a new content-stream parser module (src/lib/pdf-cleanup/content-stream.ts):
+  - Tokenizer: handles PDF literal strings (with escapes), hex strings, names, numbers, arrays, dicts, operators.
+  - Stateful operator parser: tracks graphics state (font, size, color, opacity, text matrix, transparency-group nesting) across q/Q save/restore, gs (ExtGState), Tf, Tm, Td, rg/g/k (color), Tj/TJ/'/" (text show), BMC/BDC/EMC (marked content).
+  - ExtGState resolution via pdf-lib: resolves /ca (fill opacity), /CA (stroke opacity), /S /Transparency, /Type /TransparencyGroup.
+  - Content stream extraction: handles PDFArray of content streams, decompresses FlateDecode streams with zlib (pdf-lib's getContents() returns raw bytes in this version).
+  - Fixed 3 pdf-lib API issues: PDFArray.size is a METHOD (call size()), PDFName.asText() doesn't exist (use asString()), PDFRawStream.getContents() returns raw compressed bytes (inflate manually).
+  - Output: styled TextRun objects with text, font, fontSize, rotation (from atan2 of text matrix), position, color [r,g,b], opacity, inTransparencyGroup, page.
+- Extended WatermarkCandidate type: added color, font, and score fields.
+- Refined isLikelyWatermarkText: now requires exact keyword match, or ALL-CAPS ≤40 chars with whole-word keyword, or short text ≤25 chars with whole-word keyword. Prevents false positives like "The sample size was 1,200 respondents" matching the "sample" keyword.
+- New multi-signal detection (detectWatermarksFromRuns in detect.ts):
+  - Clusters text runs by normalized text across pages.
+  - Computes 8 signals per cluster:
+    1. template (+3): keyword/regex match (strong alone).
+    2. frequency-high (+2): appears on >50% of pages; frequency (+1): >1 page.
+    3. rotation-repeat (+2): rotated text with consistent angle across pages.
+    4. transparency (+2): opacity < 0.85 or in transparency group; transparency-high for < 0.5.
+    5. color-gray (+1): LIGHT gray (r≈g≈b AND avg > 0.6); color-light (+1): avg > 0.6; color-repeat (+1): same non-black color across pages.
+    6. font-unique (+1): uses a font not in the body-font set (top-2 by frequency).
+    7. position-repeat (+2): same (x,y) position across pages.
+    8. large (+1): fontSize > 3× body median.
+  - PRIMARY SIGNAL REQUIREMENT: a cluster must have at least one primary visual signal (template, transparency, rotation-repeat, large, color-light) to be a watermark. Body text never has these; watermarks always do. This eliminates false positives on repeated body content (headers/footers/identical pages).
+  - Threshold: score ≥ 3 AND hasPrimary → watermark candidate.
+  - Computes rotated bbox from text matrix (4 corners transformed by [a b; c d] + translate).
+- Updated isWatermarkWord filter in rebuild.ts with 3 strategies:
+  1. Exact text + nearby position (unrotated watermarks).
+  2. Fragment + proximity: word is a substring of watermark text AND within bbox-diagonal/2 + fontSize radius of bbox center (catches rotated fragments without eating body text on nearby lines).
+  3. Tight bbox containment (6pt margin, edge fragments only).
+- Verified on 2 test PDFs:
+  - DRAFT watermark (45°, 50% opacity, gray [0.75,0.75,0.75], 80pt): score=15, 9 reasons. 3 candidates, 0 false positives. Body text (Lorem, Quarterly, preserved) NOT flagged despite appearing on all 3 pages.
+  - CONFIDENTIAL watermark (45°, 40% opacity, light red [0.9,0.5,0.5], 60pt): score=13, 7 reasons. 3 candidates, 0 false positives. "The sample size was 1,200 respondents" NOT flagged (despite containing keyword "sample") because the text is 39 chars, not all-caps, and not short.
+- End-to-end pipeline verified: both watermarks removed from text layer (0 occurrences), all body text preserved (11-12 lines), 0 leaked fragments, searchable PDF output confirmed via pdftotext.
+- Lint: 0 errors. Cleaned up test scripts.
+
+Stage Summary:
+- Watermark detection now uses 8 multi-signal heuristics from PDF content-stream parsing (font, rotation, color, opacity, transparency groups) instead of just word-box heuristics from pdftotext.
+- False positives eliminated: 108 → 0 on the DRAFT test PDF; 0 on the realistic CONFIDENTIAL PDF (different body text per page).
+- Primary-signal requirement ensures body text is never flagged, even when identical across pages.
+- Rotated watermark fragments (CONFIDENTIAL split into chars by pdftotext) are now filtered from the searchable text layer via fragment+proximity matching.
+- Files: src/lib/pdf-cleanup/content-stream.ts (new, ~640 lines), src/lib/pdf-cleanup/detect.ts (detectWatermarksFromRuns + analyzePdf integration), src/lib/pdf-cleanup/rebuild.ts (isWatermarkWord 3-strategy filter), src/lib/pdf-cleanup/types.ts (WatermarkCandidate color/font/score fields + refined isLikelyWatermarkText).

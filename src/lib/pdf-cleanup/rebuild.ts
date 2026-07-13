@@ -60,10 +60,22 @@ export async function buildImagePdf(
 }
 
 /**
- * Determine whether a word box corresponds to a detected watermark
- * (same page + same text + nearby position), so we can EXCLUDE it from
- * the rebuilt invisible text layer. We must not re-add watermark text we
- * just removed — that would make the watermark searchable again.
+ * Determine whether a word box corresponds to a detected watermark, so we
+ * can EXCLUDE it from the rebuilt invisible text layer. We must not re-add
+ * watermark text we just removed — that would make the watermark searchable
+ * again.
+ *
+ * Three matching strategies:
+ *  1. EXACT TEXT + POSITION: the word's text equals the candidate's text
+ *     and they're at nearby positions (handles unrotated watermarks).
+ *  2. FRAGMENT + PROXIMITY: the word is a character/substring of the
+ *     candidate's text AND is close to the candidate's origin point
+ *     (handles rotated watermarks where pdftotext splits "CONFIDENTIAL"
+ *     into single-char fragments). Proximity is measured from the
+ * *candidate's bbox center* with a radius proportional to the text length.
+ *  3. BBOX CONTAINMENT (tight): the word center is inside the candidate's
+ *     computed bbox with a SMALL margin (only catches fragments at the
+ *     edges, not body text on nearby lines).
  */
 function isWatermarkWord(
   word: WordBox,
@@ -72,14 +84,47 @@ function isWatermarkWord(
 ): boolean {
   const wt = word.text.toLowerCase().trim();
   if (!wt) return false;
+  const wordCx = (word.xMin + word.xMax) / 2;
+  const wordCy = (word.yMin + word.yMax) / 2;
   return candidates.some((c) => {
     if (c.page !== pageNumber) return false;
-    if (c.text.toLowerCase().trim() !== wt) return false;
-    // Position tolerance: watermark candidate bbox is also top-left origin
-    return (
-      Math.abs(c.bbox.x - word.xMin) < 24 &&
-      Math.abs(c.bbox.y - word.yMin) < 24
-    );
+    const ct = c.text.toLowerCase().trim();
+
+    // Strategy 1: exact text + nearby position.
+    if (ct === wt) {
+      if (Math.abs(c.bbox.x - word.xMin) < 24 && Math.abs(c.bbox.y - word.yMin) < 24) {
+        return true;
+      }
+    }
+
+    // Strategy 2: the word is a fragment (char or substring) of the watermark
+    // text, AND it's within a reasonable radius of the watermark's bbox center.
+    // This catches rotated text that pdftotext splits into characters without
+    // catching unrelated body text.
+    const isFragment = ct.length > 1 && (ct.includes(wt) || wt.includes(ct));
+    if (isFragment) {
+      const bboxCx = c.bbox.x + c.bbox.width / 2;
+      const bboxCy = c.bbox.y + c.bbox.height / 2;
+      // Radius = half the bbox diagonal + font-size margin. This is generous
+      // enough to catch all fragments along the rotated text path, but tight
+      // enough to exclude body text on other lines.
+      const radius = Math.sqrt(c.bbox.width ** 2 + c.bbox.height ** 2) / 2 + c.fontSize;
+      const dist = Math.sqrt((wordCx - bboxCx) ** 2 + (wordCy - bboxCy) ** 2);
+      if (dist <= radius) return true;
+    }
+
+    // Strategy 3: tight bbox containment (small margin only).
+    const tightMargin = 6;
+    if (
+      wordCx >= c.bbox.x - tightMargin &&
+      wordCx <= c.bbox.x + c.bbox.width + tightMargin &&
+      wordCy >= c.bbox.y - tightMargin &&
+      wordCy <= c.bbox.y + c.bbox.height + tightMargin
+    ) {
+      return true;
+    }
+
+    return false;
   });
 }
 

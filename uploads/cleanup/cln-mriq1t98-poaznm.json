@@ -1,0 +1,10 @@
+{
+  "id": "cln-mriq1t98-poaznm",
+  "createdAt": 1783916878940,
+  "stage": "queued",
+  "message": "Queued for processing",
+  "percent": 0,
+  "originalName": "test-realistic.pdf",
+  "originalSizeBytes": 2218,
+  "originalPath": "/tmp/creatortools-cleanup/analyze-1783916878959-2jgw80/test-realistic.pdf"
+}

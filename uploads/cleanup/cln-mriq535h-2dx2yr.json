@@ -1,0 +1,14 @@
+{
+  "id": "cln-mriq535h-2dx2yr",
+  "createdAt": 1783917031733,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "test-realistic.pdf",
+  "originalSizeBytes": 2218,
+  "originalPath": "/tmp/creatortools-cleanup/cleanup-1783917031734-ypgraw/test-realistic.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783917032659-d6w50e/output.pdf",
+  "outputName": "test-realistic-cleaned.pdf",
+  "outputSizeBytes": 115211,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mriq535h-2dx2yr"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "cln-mriq1g6b-88t3k6",
+  "createdAt": 1783916861987,
+  "stage": "queued",
+  "message": "Queued for processing",
+  "percent": 0,
+  "originalName": "test-watermark.pdf",
+  "originalSizeBytes": 2326,
+  "originalPath": "/tmp/creatortools-cleanup/analyze-1783916861988-c6au8b/test-watermark.pdf"
+}

@@ -134,9 +134,15 @@ export interface WatermarkCandidate {
   rotation: number;
   fontSize: number;
   opacity: number; // 0..1
+  /** Fill color as [r,g,b] 0..1 (undefined if unknown). */
+  color?: [number, number, number];
+  /** Font name (undefined if unknown). */
+  font?: string;
   /** Bounding box in PDF points. */
   bbox: { x: number; y: number; width: number; height: number };
   reasons: string[]; // why we think it's a watermark
+  /** Detection confidence score (higher = more likely a watermark). */
+  score: number;
 }
 
 export interface BackgroundCandidate {
@@ -219,7 +225,30 @@ export const WATERMARK_KEYWORDS = [
 ];
 
 export function isLikelyWatermarkText(text: string): boolean {
-  const t = text.toLowerCase().trim();
-  if (t.length === 0) return false;
-  return WATERMARK_KEYWORDS.some((kw) => t.includes(kw));
+  const raw = text.trim();
+  if (raw.length === 0) return false;
+  const t = raw.toLowerCase();
+
+  // 1. Exact keyword match (case-insensitive) — strongest signal.
+  if (WATERMARK_KEYWORDS.some((kw) => t === kw)) return true;
+
+  // 2. ALL-CAPS text ≤ 40 chars containing a keyword as a whole word.
+  //    Watermarks are typically short, uppercase stamps (DRAFT, CONFIDENTIAL).
+  const isAllCaps = raw === raw.toUpperCase() && raw !== raw.toLowerCase();
+  if (isAllCaps && raw.length <= 40) {
+    return WATERMARK_KEYWORDS.some((kw) =>
+      new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(t)
+    );
+  }
+
+  // 3. Short text (≤ 25 chars) containing a keyword as a whole word.
+  //    Catches "DRAFT COPY", "SAMPLE ONLY", etc. without flagging long
+  //    body sentences that merely contain the word "sample" or "copy".
+  if (raw.length <= 25) {
+    return WATERMARK_KEYWORDS.some((kw) =>
+      new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(t)
+    );
+  }
+
+  return false;
 }

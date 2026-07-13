@@ -1,0 +1,14 @@
+{
+  "id": "cln-mriq71a9-m6gdsf",
+  "createdAt": 1783917122625,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "test-realistic.pdf",
+  "originalSizeBytes": 2218,
+  "originalPath": "/tmp/creatortools-cleanup/cleanup-1783917122626-xs2mzh/test-realistic.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783917124088-8o8ojk/output.pdf",
+  "outputName": "test-realistic-cleaned.pdf",
+  "outputSizeBytes": 116051,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mriq71a9-m6gdsf"
+}
