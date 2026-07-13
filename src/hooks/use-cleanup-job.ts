@@ -53,7 +53,7 @@ export type JobState =
   | 'error'
   | 'canceled'
 
-/** Map low-level ProgressStage to a friendly user-facing label. */
+/** Map low-level ProgressStage to a friendly user-facing headline label. */
 export function stageLabel(stage: ProgressStage | undefined): string {
   switch (stage) {
     case 'queued':
@@ -71,9 +71,9 @@ export function stageLabel(stage: ProgressStage | undefined): string {
     case 'running-ocr':
       return 'Running OCR…'
     case 'optimizing':
-      return 'Optimizing PDF…'
+      return 'Optimizing…'
     case 'preparing-download':
-      return 'Preparing download…'
+      return 'Finalizing…'
     case 'complete':
       return 'Complete!'
     case 'error':

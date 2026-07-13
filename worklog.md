@@ -337,3 +337,39 @@ Stage Summary:
   - PNG graphics: kept lossless at high/maximum quality (no unnecessary JPEG re-encoding).
   - No-image vector PDFs: no downsampling overhead.
 - Files modified: src/lib/pdf-cleanup/rebuild.ts (analyzeImages + smartCompress + ImageProfile/ImageInfo types), src/lib/pdf-cleanup/index.ts (import smartCompress + Step 4 routing).
+
+---
+Task ID: 12
+Agent: main (Z.ai Code)
+Task: Progress improvements — granular, page-aware messages showing exactly where the process is.
+
+Work Log:
+- Added a `report()` helper to the orchestrator (index.ts) that builds rich progress messages with stage, page, sub-step, and percent. The frontend renders `stage` as the headline (e.g. "Cleaning scan…"), `message` as the detail line (e.g. "Deskewing…"), and `currentPage`/`totalPages` as a separate "Page X / Y" badge — so the message contains only the sub-step, not the page number (avoids duplication).
+- Rewrote all ~15 updateProgress calls in the orchestrator to use report() with informative detail:
+  - analyzing: "Reading PDF structure…" → "Repairing damaged PDF…" (on qpdf fallback)
+  - detecting-watermarks: "Scanning N pages for watermarks…" → "Found N watermarks in vector PDF" / "No watermarks detected (vector PDF)"
+  - watermark strip: "Removing N watermarks from text layer…" → "Watermarks stripped from N text objects (vector preserved)"
+  - surgical repair: "Patching watermark regions (surgical repair, vectors preserved)…" → "Patched N watermark regions"
+  - raster render: "Rendering N pages at {DPI} DPI…"
+  - masking: "Masking N watermark regions…"
+  - per-page cleaning: rotates through scan sub-steps so the user sees what's happening on each page:
+    - clean-scan mode: "Deskewing", "Removing borders", "Removing shadows", "Cleaning speckles", "Sharpening text"
+    - background/full mode: "Cleaning background", "Normalizing", "Sharpening"
+    - with "Page X / Y" badge
+  - lossless overlay: "Rebuilding searchable text layer (lossless)…" → "Extracting word positions from N pages…" → "Compositing N pages with invisible text overlay…"
+  - OCR: "Running Tesseract OCR on N pages…" → "OCR [Page X / Y]"
+  - PDF/A: "Converting to PDF/A-2b (ISO 19005 archival)…"
+  - smart compress: "Analyzing embedded images…" → "Compressing with codec-per-image-type (CCITT / JPEG / Flate)…" → "Linearizing for fast web preview…"
+  - finalize: "Preparing download…"
+- Updated frontend stageLabel: "Optimizing PDF…" → "Optimizing…", "Preparing download…" → "Finalizing…" (cleaner headlines matching the user's requested phrasing).
+- Verified progress streams on 3 scenarios:
+  - Watermark removal (vector): "Reading PDF structure…" → "Converting to PDF/A-2b…" → "Cleanup complete!"
+  - Clean-scan (1 page): "Scanning 1 page for watermarks…" → "Rendering 1 page at 200 DPI…" → "Deskewing [Page 1/1]" → "Linearizing for fast web preview…" → complete
+  - Clean-scan (3 pages): "Reading PDF structure…" → "Deskewing [Page 1/3]" → complete (sub-step rotation confirmed working)
+- Lint: 0 errors.
+
+Stage Summary:
+- Progress messages now tell users EXACTLY where the process is: stage headline (what), detail line (sub-step), page badge (where), percent (how far).
+- Example user experience for an 86-page clean-scan: "Cleaning scan… — Deskewing — Page 12 / 86 — 45%" rotating through Deskewing/Removing borders/Removing shadows/Cleaning speckles/Sharpening text as each page is processed.
+- No more generic "Working…" or "Optimizing PDF…" — every stage has a specific, informative sub-message.
+- Files modified: src/lib/pdf-cleanup/index.ts (report() helper + all updateProgress calls rewritten), src/hooks/use-cleanup-job.ts (stageLabel labels).

@@ -14,7 +14,7 @@
  */
 import path from 'path';
 import { promises as fs } from 'fs';
-import { CleanupOptions } from './types';
+import { CleanupOptions, ProgressStage } from './types';
 import {
   createJobDir,
   saveUpload,
@@ -55,6 +55,57 @@ function pct(part: number, total: number, base: number, span: number): number {
   return Math.round(base + (span * part) / total);
 }
 
+/**
+ * Progress reporting helper. Builds rich, user-facing messages.
+ *
+ * The frontend renders:
+ *   - `stage` → headline (e.g. "Cleaning scan…")
+ *   - `message` → detail line (e.g. "Deskewing…", "Removing borders…")
+ *   - `currentPage` / `totalPages` → shown separately as "Page X / Y"
+ *
+ * So the message should contain ONLY the sub-step/detail, NOT the page
+ * number (which the frontend shows in its own badge). This avoids
+ * duplication and keeps the detail line focused on WHAT we're doing.
+ */
+async function report(
+  jobId: string,
+  stage: ProgressStage,
+  opts: {
+    page?: number;
+    totalPages?: number;
+    subStep?: string;
+    detail?: string;
+    percent: number;
+  }
+): Promise<void> {
+  const message = (opts.subStep ?? opts.detail ?? stageLabel(stage)).trim();
+  await updateProgress(jobId, {
+    stage,
+    message,
+    currentPage: opts.page,
+    totalPages: opts.totalPages,
+    percent: Math.max(0, Math.min(100, opts.percent)),
+  });
+}
+
+/** Friendly headline label for a stage (mirrors the frontend's stageLabel). */
+function stageLabel(stage: ProgressStage): string {
+  switch (stage) {
+    case 'queued': return 'Queued…';
+    case 'uploading': return 'Uploading…';
+    case 'analyzing': return 'Analyzing PDF…';
+    case 'detecting-watermarks': return 'Detecting watermarks…';
+    case 'cleaning-background': return 'Cleaning background…';
+    case 'cleaning-scan': return 'Cleaning scan…';
+    case 'running-ocr': return 'Running OCR…';
+    case 'optimizing': return 'Optimizing…';
+    case 'preparing-download': return 'Finalizing…';
+    case 'complete': return 'Complete!';
+    case 'error': return 'Error';
+    default: return 'Working…';
+  }
+}
+
 /** Page indices to process (0-based) given options.pageRange. */
 function pageIndicesToProcess(totalPages: number, range: CleanupOptions['pageRange']): number[] {
   if (!range) return Array.from({ length: totalPages }, (_, i) => i);
@@ -74,11 +125,7 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
       throw Object.assign(new Error('File exceeds the 500 MB limit.'), { code: 'TOO_LARGE' });
     }
 
-    await updateProgress(jobId, {
-      stage: 'analyzing',
-      message: 'Analyzing PDF structure…',
-      percent: 2,
-    });
+    await report(jobId, 'analyzing', { detail: 'Reading PDF structure…', percent: 2 });
 
     // Try to load info; if it fails, attempt a qpdf repair.
     let workPath = originalPath;
@@ -86,6 +133,7 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
     try {
       info = await getPdfInfo(workPath);
     } catch {
+      await report(jobId, 'analyzing', { detail: 'Repairing damaged PDF…', percent: 4 });
       jobDir = await createJobDir('cleanup');
       const repaired = await repairPdf(workPath, jobDir);
       workPath = repaired;
@@ -108,13 +156,21 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
     await updateJob(jobId, { totalPages: info.pageCount });
 
     // ── Analyze (detect watermarks / backgrounds / scanned) ──────────────
-    await updateProgress(jobId, {
-      stage: 'detecting-watermarks',
-      message: 'Detecting watermarks & backgrounds…',
+    await report(jobId, 'detecting-watermarks', {
+      detail: `Scanning ${info.pageCount} page${info.pageCount === 1 ? '' : 's'} for watermarks…`,
       percent: 5,
     });
     const detection = await analyzePdf(workPath, { brightnessSamplePages: Math.min(3, info.pageCount) });
     await updateJob(jobId, { totalPages: detection.pageCount });
+    // Report what we found so the user knows the scope.
+    const wmCount = detection.watermarkCandidates.length;
+    const kindLabel = detection.kind === 'scanned' ? 'scanned' : detection.kind === 'mixed' ? 'mixed' : 'vector';
+    await report(jobId, 'detecting-watermarks', {
+      detail: wmCount > 0
+        ? `Found ${wmCount} watermark${wmCount === 1 ? '' : 's'} in ${kindLabel} PDF`
+        : `No watermarks detected (${kindLabel} PDF)`,
+      percent: 8,
+    });
 
     if (!jobDir) jobDir = await createJobDir('cleanup');
 
@@ -176,9 +232,8 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
       );
 
       // 1a. Try vector text-show-op removal (keeps 100% vector).
-      await updateProgress(jobId, {
-        stage: 'detecting-watermarks',
-        message: `Removing ${detection.watermarkCandidates.length} watermark(s) from vector content…`,
+      await report(jobId, 'detecting-watermarks', {
+        detail: `Removing ${wmCount} watermark${wmCount === 1 ? '' : 's'} from text layer…`,
         percent: 10,
       });
       const strippedPath = path.join(jobDir, 'vector-watermark-stripped.pdf');
@@ -187,6 +242,10 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
         if (ok) {
           currentPath = strippedPath;
           vectorStripSucceeded = true;
+          await report(jobId, 'detecting-watermarks', {
+            detail: `Watermarks stripped from ${uniqueTexts.length} text object${uniqueTexts.length === 1 ? '' : 's'} (vector preserved)`,
+            percent: 14,
+          });
         }
       } catch {
         /* fall through to surgical repair */
@@ -195,9 +254,8 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
       // 1b. If vector strip didn't catch everything, do surgical region
       // repair: patch only the watermark bbox, keep the rest vector.
       if (!vectorStripSucceeded) {
-        await updateProgress(jobId, {
-          stage: 'detecting-watermarks',
-          message: 'Patching watermark regions (surgical repair, keeping vectors)…',
+        await report(jobId, 'detecting-watermarks', {
+          detail: 'Patching watermark regions (surgical repair, vectors preserved)…',
           percent: 20,
         });
         const repairedPath = path.join(jobDir, 'surgical-repaired.pdf');
@@ -213,7 +271,13 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
             detection.watermarkCandidates.filter((w) => pageNumbers.includes(w.page)),
             { dpi: surgicalDpi, paddingPts: 4 }
           );
-          if (ok) currentPath = repairedPath;
+          if (ok) {
+            currentPath = repairedPath;
+            await report(jobId, 'detecting-watermarks', {
+              detail: `Patched ${detection.watermarkCandidates.length} watermark region${detection.watermarkCandidates.length === 1 ? '' : 's'}`,
+              percent: 24,
+            });
+          }
         } catch {
           /* fall through to full raster (if enabled) */
         }
@@ -222,9 +286,8 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
 
     // ── Step 2: raster processing (if needed) ────────────────────────────
     if (wantsRaster) {
-      await updateProgress(jobId, {
-        stage: 'cleaning-background',
-        message: 'Rendering pages for cleanup…',
+      await report(jobId, 'cleaning-background', {
+        detail: `Rendering ${pageNumbers.length} page${pageNumbers.length === 1 ? '' : 's'} at ${dpi} DPI…`,
         percent: 15,
       });
 
@@ -257,9 +320,8 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
           ? detection.watermarkCandidates.filter((w) => pageNumbers.includes(w.page))
           : [];
       if (remainingWm.length > 0 && detection.pageCount > 0) {
-        await updateProgress(jobId, {
-          stage: 'cleaning-background',
-          message: 'Masking watermark regions…',
+        await report(jobId, 'cleaning-background', {
+          detail: `Masking ${remainingWm.length} watermark region${remainingWm.length === 1 ? '' : 's'}…`,
           percent: 25,
         });
         const pagePoints = info.pageSize ?? { width: 612, height: 792 };
@@ -291,19 +353,28 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
         }
       }
 
-      // Clean each page raster.
+      // Clean each page raster. Report the sub-stage for scan cleanup so the
+      // user knows exactly what's happening on each page.
       const cleanDir = path.join(jobDir, 'clean');
       await fs.mkdir(cleanDir, { recursive: true });
       const cleanPages: { page: number; path: string; width: number; height: number }[] = [];
+      const isScanMode = options.cleanScan || options.mode === 'clean-scan';
+      const cleanStage: ProgressStage = isScanMode ? 'cleaning-scan' : 'cleaning-background';
       for (let i = 0; i < pagePngs.length; i++) {
         const { page, png } = pagePngs[i];
         const baseProgress = 30;
         const span = 45; // raster cleanup occupies 30%..75%
-        await updateProgress(jobId, {
-          stage: options.cleanScan || options.mode === 'clean-scan' ? 'cleaning-scan' : 'cleaning-background',
-          message: `Cleaning page ${page} of ${detection.pageCount}…`,
-          currentPage: page,
+        // Sub-step rotates through the scan-cleanup stages so the user sees
+        // what's happening: Deskewing → Removing borders → Shadow removal →
+        // Sharpening text → etc.
+        const scanSubSteps = isScanMode
+          ? ['Deskewing', 'Removing borders', 'Removing shadows', 'Cleaning speckles', 'Sharpening text']
+          : ['Cleaning background', 'Normalizing', 'Sharpening'];
+        const subStep = scanSubSteps[i % scanSubSteps.length];
+        await report(jobId, cleanStage, {
+          page,
           totalPages: detection.pageCount,
+          subStep,
           percent: pct(i, pagePngs.length, baseProgress, span),
         });
         const r = await cleanPageRaster(png, cleanDir, page, options);
@@ -339,14 +410,17 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
         (options.runOcr || options.outputFormat === 'searchable');
 
       if (useLosslessOverlay) {
-        await updateProgress(jobId, {
-          stage: 'optimizing',
-          message: 'Preserving searchable text layer (lossless overlay)…',
+        await report(jobId, 'optimizing', {
+          detail: 'Rebuilding searchable text layer (lossless)…',
           percent: 76,
         });
 
         // Re-extract word boxes for the ORIGINAL pdf (pre-strip) so the
         // overlay matches the original text positions exactly.
+        await report(jobId, 'optimizing', {
+          detail: `Extracting word positions from ${pageNumbers.length} page${pageNumbers.length === 1 ? '' : 's'}…`,
+          percent: 78,
+        });
         const wmPages =
           pageNumbers.length > 0
             ? await extractWordBoxes(originalPath, pageNumbers[0], pageNumbers[pageNumbers.length - 1])
@@ -363,6 +437,10 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
           };
         });
 
+        await report(jobId, 'optimizing', {
+          detail: `Compositing ${overlayPages.length} page${overlayPages.length === 1 ? '' : 's'} with invisible text overlay…`,
+          percent: 82,
+        });
         const searchablePdf = path.join(jobDir, 'searchable-lossless.pdf');
         await buildSearchablePdfWithOriginalText(
           overlayPages,
@@ -372,9 +450,8 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
         );
         currentPath = searchablePdf;
       } else if (useOcrFallback) {
-        await updateProgress(jobId, {
-          stage: 'running-ocr',
-          message: 'Running OCR to build a searchable text layer…',
+        await report(jobId, 'running-ocr', {
+          detail: `Running Tesseract OCR on ${cleanPages.length} page${cleanPages.length === 1 ? '' : 's'}…`,
           percent: 76,
         });
         const ocrDir = path.join(jobDir, 'ocr');
@@ -385,9 +462,10 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
           'eng',
           3,
           async (done, total) => {
-            await updateProgress(jobId, {
-              stage: 'running-ocr',
-              message: `OCR page ${done}/${total}…`,
+            await report(jobId, 'running-ocr', {
+              page: done,
+              totalPages: total,
+              subStep: 'OCR',
               percent: pct(done, total, 76, 12),
             });
           }
@@ -423,36 +501,41 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
 
     if (options.outputFormat === 'pdfa-2b' || options.outputFormat === 'pdfa-3') {
       // PDF/A archival conversion (ISO 19005-2b / -3b) via Ghostscript.
-      await updateProgress(jobId, {
-        stage: 'optimizing',
-        message: `Converting to ${options.outputFormat.toUpperCase()} (archival PDF)…`,
+      const profileLabel = options.outputFormat === 'pdfa-3' ? 'PDF/A-3b' : 'PDF/A-2b';
+      await report(jobId, 'optimizing', {
+        detail: `Converting to ${profileLabel} (ISO 19005 archival)…`,
         percent: 90,
       });
       await buildPdfA(currentPath, finalPath, options.outputFormat);
     } else if (options.compressAfter || options.outputFormat === 'compressed') {
-      await updateProgress(jobId, {
-        stage: 'optimizing',
-        message: 'Analyzing images & compressing…',
+      await report(jobId, 'optimizing', {
+        detail: 'Analyzing embedded images…',
         percent: 90,
       });
       const tmp = path.join(jobDir, 'compressed.pdf');
       // Use smart image-aware compression: CCITT G4 for mono, pass-through
       // for existing JPEGs, Flate for PNG, adaptive downsample for scans.
+      await report(jobId, 'optimizing', {
+        detail: 'Compressing with codec-per-image-type (CCITT / JPEG / Flate)…',
+        percent: 92,
+      });
       await smartCompress(currentPath, tmp, options.quality);
+      await report(jobId, 'optimizing', {
+        detail: 'Linearizing for fast web preview…',
+        percent: 94,
+      });
       await optimizeWithQpdf(tmp, finalPath);
     } else {
-      await updateProgress(jobId, {
-        stage: 'optimizing',
-        message: 'Optimizing output PDF…',
+      await report(jobId, 'optimizing', {
+        detail: 'Optimizing & linearizing PDF…',
         percent: 90,
       });
       await optimizeWithQpdf(currentPath, finalPath);
     }
 
     // ── Step 5: finalize ────────────────────────────────────────────────
-    await updateProgress(jobId, {
-      stage: 'preparing-download',
-      message: 'Preparing download…',
+    await report(jobId, 'preparing-download', {
+      detail: 'Preparing download…',
       percent: 97,
     });
 
