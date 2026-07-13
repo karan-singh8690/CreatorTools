@@ -1,0 +1,14 @@
+{
+  "id": "cln-mrissjho-fze2xm",
+  "createdAt": 1783921485228,
+  "stage": "complete",
+  "message": "Cleanup complete!",
+  "percent": 100,
+  "originalName": "combined-2-files.pdf",
+  "originalSizeBytes": 4544,
+  "originalPath": "/tmp/creatortools-cleanup/combine-1783921485230-5bz166/merged.pdf",
+  "outputPath": "/tmp/creatortools-cleanup/cleanup-1783921486385-3i1xo4/output.pdf",
+  "outputName": "merged-cleaned.pdf",
+  "outputSizeBytes": 5945,
+  "resultUrl": "/api/cleanup/download?jobId=cln-mrissjho-fze2xm"
+}

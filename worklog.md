@@ -373,3 +373,33 @@ Stage Summary:
 - Example user experience for an 86-page clean-scan: "Cleaning scan… — Deskewing — Page 12 / 86 — 45%" rotating through Deskewing/Removing borders/Removing shadows/Cleaning speckles/Sharpening text as each page is processed.
 - No more generic "Working…" or "Optimizing PDF…" — every stage has a specific, informative sub-message.
 - Files modified: src/lib/pdf-cleanup/index.ts (report() helper + all updateProgress calls rewritten), src/hooks/use-cleanup-job.ts (stageLabel labels).
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: Add "Combine Files" feature to the cleanup tool — merge multiple PDFs AND run the full cleanup pipeline (watermark removal, compression, PDF/A, etc.) on the merged result.
+
+Work Log:
+- New API route /api/cleanup/combine: accepts multiple `files` (multipart) + `options` JSON. Merges all PDFs in upload order via pdf-lib (copyPages), saves the merged PDF, then runs the full cleanup orchestrator (runCleanup) on it. Validates ≥2 files, 500MB limit, %PDF magic bytes. Fire-and-forget background processing; client polls /api/cleanup/status.
+- Added startCombineJob() to use-cleanup-job.ts: posts multiple files to /api/cleanup/combine, returns jobId for polling.
+- Added CombineView component to cleanup-pdf.tsx (~300 lines):
+  - Drag & drop zone for multiple PDFs (react-dropzone, accept: application/pdf)
+  - Ordered file list with up/down arrows to reorder, remove button, file name + size
+  - "Combine & Clean N Files" button (disabled when < 2 files)
+  - Full progress UI: stage headline, detail message, page badge, percent, cancel button
+  - Complete state: success card with original/output size, reduction %, download button
+  - Error state: actionable message + retry button
+  - Files merge in the displayed order; cleanup options (mode/quality/output format) apply to the merged result
+- Added "Combine" tab (3rd tab) to the cleanup tool's tab list (Single File / Batch / Combine). Mode/quality/output format selectors show for both Batch and Combine tabs.
+- Imported Combine, ArrowUp, ArrowDown, Plus icons from lucide-react.
+- Verified end-to-end:
+  - Merged test-watermark.pdf (3 pages, DRAFT) + test-realistic.pdf (3 pages, CONFIDENTIAL) = 6-page merged PDF
+  - Watermark removal + compressed output: both DRAFT (0) and CONFIDENTIAL (0) removed from text layer, all 9 body content lines preserved (Quarterly, Lorem, Methodology, Results, Section), output 5.9KB
+  - Agent Browser: Combine tab renders with "Drag & drop PDFs to combine" + "2+ files required" + Browse Files button, no console errors
+- Lint: 0 errors.
+
+Stage Summary:
+- The cleanup tool now has 3 tabs: Single File (one PDF, full pipeline), Batch (multiple PDFs processed independently), Combine (merge multiple PDFs into one + run cleanup pipeline on the merged result).
+- Combine & Clean workflow: drop 2+ PDFs → reorder → choose cleanup options (watermark removal, compression, PDF/A, scan cleanup, etc.) → one click merges AND cleans → download the combined+cleaned PDF.
+- All cleanup capabilities (watermark detection/removal, searchable text preservation, vector preservation, scan cleanup, smart compression, PDF/A-2b/3, progress reporting) now work on merged documents.
+- Files: src/app/api/cleanup/combine/route.ts (new), src/hooks/use-cleanup-job.ts (startCombineJob), src/components/pdf-element/cleanup-pdf.tsx (CombineView + tab + imports).

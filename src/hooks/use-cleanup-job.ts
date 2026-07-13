@@ -116,6 +116,38 @@ export async function startCleanupJob(
   }
 }
 
+/**
+ * Start a COMBINE + cleanup job. Merges multiple PDFs into one, then runs
+ * the full cleanup pipeline on the merged result. Returns the jobId.
+ */
+export async function startCombineJob(
+  files: File[],
+  options: CleanupOptions
+): Promise<{ jobId: string; totalPages: number; estimatedSeconds: number }> {
+  const form = new FormData()
+  for (const f of files) {
+    form.append('files', f)
+  }
+  form.append('options', JSON.stringify(options))
+
+  const res = await fetch('/api/cleanup/combine', { method: 'POST', body: form })
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok || !data?.ok) {
+    const err = new Error(
+      (data && (data.error || data.message)) || `Request failed (${res.status})`
+    ) as Error & { code?: string }
+    err.code = data?.code
+    throw err
+  }
+
+  return {
+    jobId: data.jobId as string,
+    totalPages: data.totalPages as number,
+    estimatedSeconds: data.estimatedSeconds as number,
+  }
+}
+
 /** Cancel a running/complete cleanup job (also deletes the result file). */
 export async function cancelCleanupJob(jobId: string): Promise<void> {
   try {

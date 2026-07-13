@@ -42,6 +42,10 @@ import {
   ChevronRight,
   ChevronDown,
   Layers,
+  Combine,
+  ArrowUp,
+  ArrowDown,
+  Plus,
   Image as ImageIcon,
   ScanLine,
   Eraser,
@@ -88,6 +92,7 @@ import { useToast } from '@/hooks/use-toast'
 import {
   useCleanupJob,
   startCleanupJob,
+  startCombineJob,
   pollCleanupStatus,
   cancelCleanupJob,
   stageLabel,
@@ -1394,6 +1399,321 @@ function BatchFileRow({ entry, onCancel, onRetry, onDownload, onRemove }: BatchF
   )
 }
 
+// ─── Combine view (merge multiple PDFs + clean) ───────────────────────────────
+
+interface CombineFileEntry {
+  id: string
+  file: File
+}
+
+function CombineView({ options }: { options: CleanupOptions }) {
+  const { toast } = useToast()
+  const [entries, setEntries] = useState<CombineFileEntry[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [status, setStatus] = useState<CleanupStatusResponse | null>(null)
+  const [state, setState] = useState<'idle' | 'starting' | 'running' | 'complete' | 'error' | 'canceled'>('idle')
+  const stopRef = useRef<(() => void) | null>(null)
+
+  const onDrop = useCallback((accepted: File[]) => {
+    const newEntries: CombineFileEntry[] = accepted.map((f) => ({
+      id: `${f.name}-${f.size}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file: f,
+    }))
+    setEntries((prev) => [...prev, ...newEntries])
+  }, [])
+
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+    onDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    noClick: true,
+  })
+
+  const moveEntry = useCallback((id: string, dir: 'up' | 'down') => {
+    setEntries((prev) => {
+      const idx = prev.findIndex((e) => e.id === id)
+      if (idx < 0) return prev
+      const newIdx = dir === 'up' ? idx - 1 : idx + 1
+      if (newIdx < 0 || newIdx >= prev.length) return prev
+      const copy = [...prev]
+      ;[copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]]
+      return copy
+    })
+  }, [])
+
+  const removeEntry = useCallback((id: string) => {
+    setEntries((prev) => prev.filter((e) => e.id !== id))
+  }, [])
+
+  const totalSize = entries.reduce((s, e) => s + e.file.size, 0)
+
+  const handleCombine = useCallback(async () => {
+    if (entries.length < 2) return
+    setIsProcessing(true)
+    setState('starting')
+    setStatus(null)
+    try {
+      const { jobId } = await startCombineJob(
+        entries.map((e) => e.file),
+        options
+      )
+      setState('running')
+      const stop = pollCleanupStatus(
+        jobId,
+        (s) => {
+          setStatus(s)
+          if (s.stage === 'complete') {
+            setState('complete')
+            setIsProcessing(false)
+            toast({ title: 'Combine & Clean complete!', description: s.outputFileName })
+          } else if (s.stage === 'error') {
+            setState('error')
+            setIsProcessing(false)
+            toast({ title: 'Processing failed', description: s.error, variant: 'destructive' })
+          }
+        },
+        (err) => {
+          setState('error')
+          setIsProcessing(false)
+          setStatus((prev) => ({
+            ok: false,
+            jobId,
+            stage: 'error',
+            message: err.message,
+            percent: 100,
+            error: err.message,
+          }))
+          toast({ title: 'Polling error', description: err.message, variant: 'destructive' })
+        }
+      )
+      stopRef.current = stop
+    } catch (err) {
+      setState('error')
+      setIsProcessing(false)
+      const msg = err instanceof Error ? err.message : 'Failed to start'
+      setStatus({
+        ok: false,
+        jobId: '',
+        stage: 'error',
+        message: msg,
+        percent: 100,
+        error: msg,
+      })
+      toast({ title: 'Failed to start', description: msg, variant: 'destructive' })
+    }
+  }, [entries, options, toast])
+
+  const handleCancel = useCallback(() => {
+    stopRef.current?.()
+    if (status?.jobId) cancelCleanupJob(status.jobId)
+    setState('canceled')
+    setIsProcessing(false)
+  }, [status])
+
+  const handleDownload = useCallback(() => {
+    if (!status?.resultUrl) return
+    const a = document.createElement('a')
+    a.href = status.resultUrl
+    a.download = status.outputFileName || 'combined-cleaned.pdf'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    toast({ title: 'Download started', description: a.download })
+  }, [status, toast])
+
+  // ── Complete state ──
+  if (state === 'complete' && status) {
+    const orig = status.originalSizeBytes ?? totalSize
+    const out = status.outputSizeBytes ?? 0
+    const reduction = status.reductionPercent ?? (orig > 0 ? Math.max(0, Math.round((1 - out / orig) * 100)) : 0)
+    return (
+      <div className="space-y-3">
+        <Card className="border-emerald-300/60 bg-emerald-50/50 dark:border-emerald-800/60 dark:bg-emerald-950/20">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                  Combined & Cleaned!
+                </h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Merged {entries.length} files → {status.outputFileName}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                  <span>Original: {formatFileSize(orig)}</span>
+                  <span>Output: {formatFileSize(out)}</span>
+                  {reduction > 0 && (
+                    <Badge variant="secondary" className="text-[10px] text-emerald-700">
+                      {reduction}% smaller
+                    </Badge>
+                  )}
+                </div>
+                <Button size="sm" className="mt-3 bg-rose-600 text-white hover:bg-rose-700" onClick={handleDownload}>
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Button variant="outline" size="sm" className="w-full" onClick={() => { setState('idle'); setStatus(null); setEntries([]) }}>
+          Start New
+        </Button>
+      </div>
+    )
+  }
+
+  // ── Error state ──
+  if (state === 'error') {
+    const msg = friendlyError(status?.error || status?.message, undefined)
+    return (
+      <Card className="border-destructive/40 bg-destructive/5">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+            <div className="flex-1">
+              <h4 className="text-sm font-semibold text-destructive">Combine Failed</h4>
+              <p className="mt-1 text-xs text-muted-foreground">{msg}</p>
+              <Button size="sm" variant="default" className="mt-3" onClick={handleCombine}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // ── Running state ──
+  if (state === 'running' || state === 'starting') {
+    const pct = status?.percent ?? 0
+    const stage = status?.stage ?? 'queued'
+    return (
+      <Card className="border-rose-200/60 dark:border-rose-900/60">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-rose-600" />
+              <span className="text-sm font-medium">
+                {state === 'starting' ? 'Starting…' : stageLabel(stage)}
+              </span>
+            </div>
+            <span className="text-xs font-semibold text-rose-600">{Math.round(pct)}%</span>
+          </div>
+          <Progress value={pct} className="mt-3 h-2" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Combine progress" />
+          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="truncate">{status?.message || 'Working…'}</span>
+            {status?.currentPage && status?.totalPages ? (
+              <span>Page {status.currentPage} / {status.totalPages}</span>
+            ) : null}
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" variant="outline" onClick={handleCancel}>
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // ── Idle: file list + upload ──
+  return (
+    <div className="space-y-4">
+      <div
+        {...getRootProps()}
+        className={cn(
+          'rounded-xl border-2 border-dashed p-6 text-center transition-colors cursor-pointer',
+          isDragActive
+            ? 'border-rose-500 bg-rose-50/60 dark:bg-rose-950/20'
+            : 'border-border hover:border-rose-300 dark:hover:border-rose-800'
+        )}
+        onClick={open}
+      >
+        <input {...getInputProps()} />
+        <Combine className="mx-auto h-10 w-10 text-rose-500" />
+        <p className="mt-2 text-sm font-medium">
+          {isDragActive ? 'Drop PDFs here…' : 'Drag & drop PDFs to combine'}
+        </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          or click to browse · 2+ files required
+        </p>
+        <Button type="button" variant="outline" size="sm" className="mt-3">
+          <Plus className="h-3.5 w-3.5" />
+          Browse Files
+        </Button>
+      </div>
+
+      {entries.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              {entries.length} file{entries.length === 1 ? '' : 's'} · {formatFileSize(totalSize)}
+            </span>
+            <Button variant="ghost" size="sm" className="text-[11px]" onClick={() => setEntries([])}>
+              Clear all
+            </Button>
+          </div>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {entries.map((entry, idx) => (
+              <div
+                key={entry.id}
+                className="flex items-center gap-2 rounded-lg border border-border bg-card p-2"
+              >
+                <span className="w-5 shrink-0 text-center text-[11px] font-semibold text-muted-foreground">
+                  {idx + 1}
+                </span>
+                <FileText className="h-4 w-4 shrink-0 text-rose-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{entry.file.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{formatFileSize(entry.file.size)}</p>
+                </div>
+                <div className="flex shrink-0 gap-0.5">
+                  <button
+                    onClick={() => moveEntry(entry.id, 'up')}
+                    disabled={idx === 0}
+                    className="rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30"
+                    aria-label="Move up"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => moveEntry(entry.id, 'down')}
+                    disabled={idx === entries.length - 1}
+                    className="rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30"
+                    aria-label="Move down"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => removeEntry(entry.id)}
+                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Remove"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button
+            className="w-full bg-rose-600 text-white hover:bg-rose-700"
+            disabled={entries.length < 2 || isProcessing}
+            onClick={handleCombine}
+          >
+            <Combine className="h-4 w-4" />
+            Combine & Clean {entries.length} Files
+          </Button>
+          <p className="text-center text-[10px] text-muted-foreground">
+            Files merge in the order shown · cleanup options apply to the merged result
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function CleanupPdf() {
@@ -1405,7 +1725,7 @@ export function CleanupPdf() {
   const [detection, setDetection] = useState<DetectionResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [options, setOptions] = useState<CleanupOptions>(DEFAULT_OPTIONS)
-  const [tab, setTab] = useState<'single' | 'batch'>('single')
+  const [tab, setTab] = useState<'single' | 'batch' | 'combine'>('single')
   const [isStarting, setIsStarting] = useState(false)
 
   // ── Handle new file drop ──────────────────────────────────────────────────
@@ -1522,8 +1842,8 @@ export function CleanupPdf() {
           {!file ? (
             // ── Initial: upload zone ──
             <div className="space-y-4">
-              <Tabs value={tab} onValueChange={(v) => setTab(v as 'single' | 'batch')}>
-                <TabsList className="w-full max-w-xs">
+              <Tabs value={tab} onValueChange={(v) => setTab(v as 'single' | 'batch' | 'combine')}>
+                <TabsList className="w-full max-w-md">
                   <TabsTrigger value="single" className="flex-1">
                     <FileText className="h-3.5 w-3.5" />
                     Single File
@@ -1531,6 +1851,10 @@ export function CleanupPdf() {
                   <TabsTrigger value="batch" className="flex-1">
                     <Layers className="h-3.5 w-3.5" />
                     Batch
+                  </TabsTrigger>
+                  <TabsTrigger value="combine" className="flex-1">
+                    <Combine className="h-3.5 w-3.5" />
+                    Combine
                   </TabsTrigger>
                 </TabsList>
 
@@ -1562,10 +1886,18 @@ export function CleanupPdf() {
                     </CardContent>
                   </Card>
                 </TabsContent>
+
+                <TabsContent value="combine" className="mt-4">
+                  <Card>
+                    <CardContent className="p-4">
+                      <CombineView options={options} />
+                    </CardContent>
+                  </Card>
+                </TabsContent>
               </Tabs>
 
-              {/* Mode/quality selectors visible in batch tab too */}
-              {tab === 'batch' && (
+              {/* Mode/quality selectors visible in batch & combine tabs */}
+              {(tab === 'batch' || tab === 'combine') && (
                 <Card className="mt-4">
                   <CardContent className="space-y-4 p-4">
                     <ModeSelector value={options.mode} onChange={handleModeChange} />
