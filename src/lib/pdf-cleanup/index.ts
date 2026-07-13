@@ -33,6 +33,7 @@ import {
   compressWithGhostscript,
   optimizeWithQpdf,
   stripTextWatermarkFromVector,
+  surgicalWatermarkRepair,
   fileSize,
 } from './rebuild';
 import { updateProgress, updateJob } from './job-store';
@@ -127,21 +128,30 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
     const pagesToProcess = pageIndicesToProcess(detection.pageCount, options.pageRange);
     const pageNumbers = pagesToProcess.map((i) => i + 1); // 1-indexed
 
-    // Decide if we need raster rendering. Watermark removal also needs
-    // raster when there are detected watermark regions to mask visually
-    // (vector strip is best-effort; raster masking guarantees removal).
+    // Decide if we need full-page raster rendering. We AVOID full raster
+    // for watermark-only removal on vector PDFs — instead we use surgical
+    // vector strip + region repair (keeps the page vector, small file).
+    // Full raster is only needed for: background removal, clean-scan,
+    // scanned/mixed PDFs, flattened/searchable output, OCR, or full mode.
+    const isWatermarkOnlyVector =
+      (options.mode === 'watermark' ||
+        (options.removeWatermark && !options.removeBackground && !options.cleanScan)) &&
+      detection.hasTextLayer &&
+      detection.kind !== 'scanned';
+
     const wantsRaster =
-      options.mode === 'clean-scan' ||
-      options.cleanScan ||
-      options.removeBackground ||
-      options.removeWatermark ||
-      detection.kind === 'scanned' ||
-      detection.kind === 'mixed' ||
-      (detection.watermarkCandidates.length > 0) ||
-      options.outputFormat === 'flattened' ||
-      options.outputFormat === 'searchable' ||
-      options.runOcr ||
-      options.mode === 'full';
+      !isWatermarkOnlyVector &&
+      (options.mode === 'clean-scan' ||
+        options.cleanScan ||
+        options.removeBackground ||
+        options.removeWatermark ||
+        detection.kind === 'scanned' ||
+        detection.kind === 'mixed' ||
+        detection.watermarkCandidates.length > 0 ||
+        options.outputFormat === 'flattened' ||
+        options.outputFormat === 'searchable' ||
+        options.runOcr ||
+        options.mode === 'full');
 
     const wantsVectorWatermarkStrip =
       (options.removeWatermark || options.mode === 'watermark' || options.mode === 'full') &&
@@ -149,23 +159,62 @@ export async function runCleanup({ jobId, originalPath, options }: RunArgs): Pro
       detection.watermarkCandidates.length > 0;
 
     let currentPath = workPath;
+    let vectorStripSucceeded = false;
 
-    // ── Step 1: vector watermark stripping (text PDFs) ───────────────────
+    // ── Step 1: watermark removal — preserve vectors ─────────────────────
+    // Strategy: try surgical vector strip first (removes the exact Tj/TJ
+    // operator emitting the watermark text → 100% vector output). If that
+    // fails (image watermarks, complex paths), fall back to surgical region
+    // repair (rasterize ONLY the watermark bbox, composite a white patch,
+    // keep everything else vector). Full-page raster is the last resort,
+    // used only for background/clean-scan modes.
     if (wantsVectorWatermarkStrip) {
-      await updateProgress(jobId, {
-        stage: 'detecting-watermarks',
-        message: `Removing ${detection.watermarkCandidates.length} watermark(s) from text layer…`,
-        percent: 10,
-      });
-      const strippedPath = path.join(jobDir, 'vector-watermark-stripped.pdf');
       const uniqueTexts = Array.from(
         new Set(detection.watermarkCandidates.map((w) => w.text).filter((t) => t && t.trim()))
       );
+
+      // 1a. Try vector text-show-op removal (keeps 100% vector).
+      await updateProgress(jobId, {
+        stage: 'detecting-watermarks',
+        message: `Removing ${detection.watermarkCandidates.length} watermark(s) from vector content…`,
+        percent: 10,
+      });
+      const strippedPath = path.join(jobDir, 'vector-watermark-stripped.pdf');
       try {
         const ok = await stripTextWatermarkFromVector(currentPath, strippedPath, uniqueTexts);
-        if (ok) currentPath = strippedPath;
+        if (ok) {
+          currentPath = strippedPath;
+          vectorStripSucceeded = true;
+        }
       } catch {
-        /* fall back to raster path below */
+        /* fall through to surgical repair */
+      }
+
+      // 1b. If vector strip didn't catch everything, do surgical region
+      // repair: patch only the watermark bbox, keep the rest vector.
+      if (!vectorStripSucceeded) {
+        await updateProgress(jobId, {
+          stage: 'detecting-watermarks',
+          message: 'Patching watermark regions (surgical repair, keeping vectors)…',
+          percent: 20,
+        });
+        const repairedPath = path.join(jobDir, 'surgical-repaired.pdf');
+        try {
+          const surgicalDpi =
+            options.quality === 'fast' ? 200
+            : options.quality === 'balanced' ? 300
+            : options.quality === 'high' ? 400
+            : 600;
+          const ok = await surgicalWatermarkRepair(
+            currentPath,
+            repairedPath,
+            detection.watermarkCandidates.filter((w) => pageNumbers.includes(w.page)),
+            { dpi: surgicalDpi, paddingPts: 4 }
+          );
+          if (ok) currentPath = repairedPath;
+        } catch {
+          /* fall through to full raster (if enabled) */
+        }
       }
     }
 

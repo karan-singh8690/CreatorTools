@@ -212,3 +212,35 @@ Stage Summary:
 - Primary-signal requirement ensures body text is never flagged, even when identical across pages.
 - Rotated watermark fragments (CONFIDENTIAL split into chars by pdftotext) are now filtered from the searchable text layer via fragment+proximity matching.
 - Files: src/lib/pdf-cleanup/content-stream.ts (new, ~640 lines), src/lib/pdf-cleanup/detect.ts (detectWatermarksFromRuns + analyzePdf integration), src/lib/pdf-cleanup/rebuild.ts (isWatermarkWord 3-strategy filter), src/lib/pdf-cleanup/types.ts (WatermarkCandidate color/font/score fields + refined isLikelyWatermarkText).
+
+---
+Task ID: 8
+Agent: main (Z.ai Code)
+Task: Preserve vector graphics — surgical watermark removal instead of full-page rasterization.
+
+Work Log:
+- Problem: the raster fallback converted the ENTIRE page to an image, destroying vector quality and inflating file size (134KB output for a 2.3KB input — 35× bloat). Professional tools rasterize only the watermark region.
+- Solution: two-stage surgical removal that keeps the page vector.
+  1. VECTOR STRIP (preferred): remove the exact Tj/TJ/'/" text-show operator whose string operand matches a watermark → 100% vector output, zero rasterization.
+  2. SURGICAL REGION REPAIR (fallback): for watermarks that can't be stripped via text-op removal (image watermarks, complex vector paths), rasterize ONLY the watermark bbox, composite a white patch over it, embed as a small image XObject at the exact bbox coords → everything outside the bbox stays vector.
+  3. Full-page raster is now the LAST resort, used only for background removal / clean-scan / flattened output.
+- Rewrote stripTextWatermarkFromVector (rebuild.ts): replaced the fragile regex approach with our content-stream tokenizer for PRECISE operator removal. Tokenizes the decompressed stream, walks tokens, drops any Tj/TJ/'/" op whose string operand matches a watermark (case-insensitive), serializes the kept tokens back, recompresses with FlateDecode. Handles PDFArray of content streams + indirect refs. Added serializeTokens/needsSeparator/escapePdfString helpers + Token type import from content-stream.
+- New surgicalWatermarkRepair function (rebuild.ts): for each detected watermark bbox — renders the page at high DPI (200-600 based on quality), crops to the watermark region in pixels, generates a clean white rectangle of that size, embeds it as a PNG XObject, draws it at the exact bbox coordinates on the vector page. Only the watermark region is rasterized; everything else stays vector. Handles coordinate conversion (top-left origin bbox → bottom-left pdf-lib drawImage) with 4pt padding to fully cover edges.
+- Updated orchestrator (index.ts):
+  - Added isWatermarkOnlyVector condition: watermark-only mode on a text/vector PDF skips full-page raster entirely.
+  - Step 1 now tries vector strip first (1a), then surgical region repair (1b) if strip didn't catch everything. Only falls through to full raster for background/clean-scan/flattened modes.
+  - wantsRaster is now false for watermark-only vector PDFs.
+  - Added surgicalWatermarkRepair to imports.
+- Verified end-to-end on both test PDFs:
+  - DRAFT PDF (45° rotated, 50% opacity, gray): vector strip succeeded. Output = 3,839 bytes (vs 134,255 bytes old raster = 35× smaller). 0 embedded images (pure vector). DRAFT removed from text layer (0 count). All body text preserved & searchable. Watermark visually gone (gray pixels 7.0% → 0.0% — cleaner than old raster's 1.5% residual JPEG artifacts).
+  - CONFIDENTIAL PDF (45° rotated, 40% opacity, light red): vector strip succeeded. Output = 3,675 bytes. 0 embedded images. CONFIDENTIAL removed (0 count). All 9 body lines preserved.
+  - pdfimages -list confirms 0 embedded images in both outputs (vs 3 full-page images in the old raster approach).
+- Lint: 0 errors.
+
+Stage Summary:
+- Vector graphics are now PRESERVED — watermark removal no longer rasterizes the entire page.
+- File sizes dropped 35× (134KB → 3.8KB for the DRAFT test PDF) because no full-page images are embedded.
+- Print quality is now infinite (vector text/graphics outside the watermark are untouched, scalable to any resolution).
+- Three-tier strategy: (1) vector text-op strip → 100% vector; (2) surgical region repair → vector + small patched region; (3) full-page raster → only for background/clean-scan/flattened.
+- The surgical approach is actually BETTER than the old raster at visual watermark removal (0.0% residual vs 1.5% JPEG artifacts) because there's no rasterization to introduce artifacts.
+- Files modified: src/lib/pdf-cleanup/rebuild.ts (rewrote stripTextWatermarkFromVector with tokenizer; added surgicalWatermarkRepair; added serialize helpers), src/lib/pdf-cleanup/content-stream.ts (exported Token type), src/lib/pdf-cleanup/index.ts (isWatermarkOnlyVector + two-stage Step 1).

@@ -67,7 +67,7 @@ export interface PageTextRuns {
 
 // ─── Tokenizer ───────────────────────────────────────────────────────────────
 
-type Token =
+export type Token =
   | { t: 'str'; v: string }
   | { t: 'num'; v: number }
   | { t: 'name'; v: string }
