@@ -19,6 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "CreatorTools - PDF Editor & Manager",
   description: "CreatorTools - Edit, convert, OCR, combine, and manage PDF files with AI-powered features. 18+ free online PDF tools.",
   keywords: ["PDF", "editor", "convert", "OCR", "combine", "compress", "CreatorTools", "QR code", "watermark", "sign", "compress"],

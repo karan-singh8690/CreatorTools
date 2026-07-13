@@ -3,7 +3,7 @@
 // All tool metadata for sitemap, landing pages, and social sharing
 // ============================================================
 
-export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://creatortools.app';
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://creator-tools-chi.vercel.app';
 export const SITE_NAME = 'CreatorTools';
 export const SITE_TAGLINE = 'Your All-in-One Creative Toolkit';
 
