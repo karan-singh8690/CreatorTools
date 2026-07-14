@@ -359,17 +359,14 @@ export function TeraboxPlayer() {
                 )}
                 <div className="video-info" id="videoInfo">
                   <h3 id="videoTitle">
-                    {result
-                      ? result.title || 'Now playing'
-                      : 'Ready to play'}
+                    {result ? 'Now Playing' : 'Ready to play'}
                   </h3>
                   <p id="videoDescription">
                     {result ? (
                       <>
-                        {inputUrl}
-                        {result.size ? ` · ${formatBytes(result.size)}` : ''}
+                        {result.size ? `${formatBytes(result.size)}` : ''}
                         {result.duration
-                          ? ` · ${formatDuration(result.duration)}`
+                          ? `${result.size ? ' · ' : ''}${formatDuration(result.duration)}`
                           : ''}
                         {result.host ? ` · via ${result.host}` : ''}
                       </>

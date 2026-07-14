@@ -79,7 +79,7 @@ export function FeedbackButton() {
       {/* Floating Button */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 bg-[#4A90D9] hover:bg-[#3A7BC8] text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 active:scale-95 group"
+        className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-30 md:z-40 flex items-center gap-2 px-4 py-3 bg-[#4A90D9] hover:bg-[#3A7BC8] text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 active:scale-95 group"
         aria-label="Send feedback"
       >
         <MessageSquare className="w-5 h-5 transition-transform group-hover:scale-110" />
