@@ -14,16 +14,16 @@ Work Log:
 - Set dev script to `next dev -p 3000 --webpack` (pdfjs-dist has Turbopack issues; clone uses webpack) + added postinstall prisma generate.
 - Ran `bun run db:push` -> SQLite tables (PdfFile, UploadLog, ChunkUploadSession) created at db/custom.db.
 - Discovered sandbox reaps ALL call-spawned background processes on Bash-call end (setsid/nohup/disown cannot escape — confirmed via trivial `sleep 600` test that died across calls). Caddy (PID 2) is the only protected process.
-- Solved persistence: wrote .zscripts/launch-dev-daemon.py (Python double-fork daemonizer) -> grandchild orphaned to PID 1 escapes the process-tree reaper. Server now persists across Bash calls.
+- Solved persistence: wrote scripts/launch-dev-daemon.py (Python double-fork daemonizer) -> grandchild orphaned to PID 1 escapes the process-tree reaper. Server now persists across Bash calls.
 - Added allowedDevOrigins: ['*.space-z.ai', 'localhost', '127.0.0.1'] to next.config.ts so the preview panel can load /_next/* assets.
 - Verified with Agent Browser: homepage renders (sidebar + 18 PDF tools + upload area + Popular Tools grid), title correct, no console/runtime errors. QR Generator view-switch works; QR code generation end-to-end (canvas + 53 SVG elements, download buttons enabled). Mobile responsive (375px hamburger menu + collapsible drawer). All routes HTTP 200: /, /api, /api/files, /api/storage, /blog, /robots.txt, /sitemap.xml, /tools/compress-pdf.
 
 Stage Summary:
 - CreatorTools is cloned, adapted (PG->SQLite), and running persistently on port 3000 via double-fork daemon (next-server PID 2440, orphaned to PID 1).
-- Dev server: `python3 .zscripts/launch-dev-daemon.py` (restart command). Logs in dev.log.
+- Dev server: `python3 scripts/launch-dev-daemon.py` (restart command). Logs in dev.log.
 - DB: SQLite at db/custom.db, schema pushed.
 - All core features verified working in browser (QR generation confirmed end-to-end). No errors.
-- Key artifact: .zscripts/launch-dev-daemon.py — required because the K8s sandbox reaps background processes on Bash-call end; the double-fork orphan escapes the reaper.
+- Key artifact: scripts/launch-dev-daemon.py — required because the K8s sandbox reaps background processes on Bash-call end; the double-fork orphan escapes the reaper.
 
 ---
 Task ID: 4
@@ -93,7 +93,7 @@ Stage Summary:
   - `src/components/seo/tool-landing-page.tsx` — added Sparkles import + "Remove Watermark" entry to the "Explore More Tools" grid.
 - Package added: `jszip` (for batch ZIP download).
 - Browser verification: all four user entry points (sidebar, popular tools, all-tools, deep-link `?tool=cleanup`) navigate to the cleanup view; tabs/mode/quality/format/advanced-options all render; no console errors; mobile + desktop responsive; SEO landing page serves 200 with correct metadata.
-- Dev server: was down on first attempt (process had exited); restarted via `python3 .zscripts/launch-dev-daemon.py` (double-fork daemon, persists across Bash calls). All routes return 200.
+- Dev server: was down on first attempt (process had exited); restarted via `python3 scripts/launch-dev-daemon.py` (double-fork daemon, persists across Bash calls). All routes return 200.
 - No unresolved issues.
 
 ---

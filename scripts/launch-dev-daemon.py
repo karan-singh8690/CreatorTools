@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Double-fork daemon launcher for the Next.js dev server.
-The grandchild becomes a true orphan (parent = PID 1), which may escape
-process-tree-walk reapers. Writes its own pid to .zscripts/dev.pid."""
+
+The grandchild becomes a true orphan (parent = PID 1), which escapes
+process-tree-walk reapers. Writes its own pid to scripts/dev.pid."""
 import os, sys, time
 
-DEV_PID_FILE = "/home/z/my-project/.zscripts/dev.pid"
+DEV_PID_FILE = "/home/z/my-project/scripts/dev.pid"
 DEV_LOG = "/home/z/my-project/dev.log"
 
 def daemonize():
