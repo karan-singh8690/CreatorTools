@@ -10,6 +10,7 @@
  * permanently."
  */
 import path from 'path';
+import os from 'os';
 import { promises as fs } from 'fs';
 import { ProgressStage } from './types';
 import { rmrf } from './utils';
@@ -33,7 +34,11 @@ export interface CleanupJob {
 }
 
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
-const JOBS_DIR = path.join(process.cwd(), 'uploads', 'cleanup');
+// On Vercel the only writable directory is /tmp; elsewhere use project uploads/.
+const IS_VERCEL = process.env.VERCEL === '1';
+const JOBS_DIR = IS_VERCEL
+  ? path.join(os.tmpdir(), 'creatortools-cleanup', 'jobs')
+  : path.join(process.cwd(), 'uploads', 'cleanup');
 
 async function ensureJobsDir() {
   await fs.mkdir(JOBS_DIR, { recursive: true });

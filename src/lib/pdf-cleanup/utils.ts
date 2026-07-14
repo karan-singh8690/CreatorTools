@@ -11,8 +11,14 @@ import sharp from 'sharp';
 
 const execFileP = promisify(execFile);
 
+// On Vercel the only writable directory is /tmp. On other platforms (local
+// dev, Docker, Render) we use the project-relative uploads/ dir so files
+// persist. Detect Vercel via the VERCEL env var (set automatically).
+const IS_VERCEL = process.env.VERCEL === '1';
 const TMP_ROOT = path.join(os.tmpdir(), 'creatortools-cleanup');
-const JOBS_ROOT = path.join(process.cwd(), 'uploads', 'cleanup');
+const JOBS_ROOT = IS_VERCEL
+  ? path.join(os.tmpdir(), 'creatortools-cleanup', 'jobs')
+  : path.join(process.cwd(), 'uploads', 'cleanup');
 
 export async function ensureDirs() {
   await fs.mkdir(TMP_ROOT, { recursive: true });
@@ -156,4 +162,49 @@ export async function avgBrightness(pngFile: string): Promise<number> {
 export async function imageSize(pngFile: string): Promise<{ width: number; height: number }> {
   const meta = await sharp(pngFile).metadata();
   return { width: meta.width ?? 0, height: meta.height ?? 0 };
+}
+
+/**
+ * Check whether a system binary is available on PATH. Returns true/false.
+ * Used to detect Vercel (where gs/tesseract/poppler are NOT installed) and
+ * surface a helpful error instead of a confusing ENOENT.
+ */
+export async function hasBinary(name: string): Promise<boolean> {
+  try {
+    await execFileP('which', [name], { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verify all system binaries the cleanup tool needs are installed.
+ * Throws a clear, actionable error if any are missing (e.g. on Vercel).
+ */
+export async function assertSystemBinaries(): Promise<void> {
+  const required = [
+    { name: 'gs', label: 'Ghostscript (PDF/A, compression)' },
+    { name: 'tesseract', label: 'Tesseract (OCR)' },
+    { name: 'pdftoppm', label: 'Poppler (page rendering)' },
+    { name: 'pdfinfo', label: 'Poppler (PDF info)' },
+    { name: 'pdftotext', label: 'Poppler (text extraction)' },
+    { name: 'qpdf', label: 'qpdf (optimization)' },
+  ];
+  const missing: string[] = [];
+  for (const bin of required) {
+    if (!(await hasBinary(bin.name))) missing.push(`${bin.name} — ${bin.label}`);
+  }
+  if (missing.length > 0) {
+    throw Object.assign(
+      new Error(
+        'This PDF cleanup feature requires system binaries that are not available on this hosting platform. ' +
+          'The following are missing: ' +
+          missing.join(', ') +
+          '. To use this feature, deploy via Docker (Render, Railway, or Fly.io) — see DEPLOY.md. ' +
+          'All other tools on this site work normally.'
+      ),
+      { code: 'MISSING_BINARIES' }
+    );
+  }
 }

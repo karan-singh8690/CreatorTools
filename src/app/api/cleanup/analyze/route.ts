@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createJobDir, saveUpload, getPdfInfo, sanitizeFilename } from '@/lib/pdf-cleanup/utils';
+import { createJobDir, saveUpload, getPdfInfo, sanitizeFilename, assertSystemBinaries } from '@/lib/pdf-cleanup/utils';
 import { analyzePdf } from '@/lib/pdf-cleanup/detect';
 import { createJob, updateJob } from '@/lib/pdf-cleanup/job-store';
 import { AnalyzeResponse } from '@/lib/pdf-cleanup/types';
@@ -9,6 +9,10 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    // Verify system binaries are available (Vercel doesn't have them).
+    // Throws a clear, actionable error if missing — instead of ENOENT.
+    await assertSystemBinaries();
+
     const form = await req.formData();
     const file = form.get('file');
     if (!(file instanceof File)) {

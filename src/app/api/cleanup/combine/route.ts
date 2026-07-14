@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 import path from 'path';
 import { promises as fs } from 'fs';
-import { createJobDir, saveUpload, sanitizeFilename } from '@/lib/pdf-cleanup/utils';
+import { createJobDir, saveUpload, sanitizeFilename, assertSystemBinaries } from '@/lib/pdf-cleanup/utils';
 import { createJob, updateJob } from '@/lib/pdf-cleanup/job-store';
 import { runCleanup } from '@/lib/pdf-cleanup';
 import { DEFAULT_OPTIONS, CleanupOptions } from '@/lib/pdf-cleanup/types';
@@ -26,6 +26,9 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   let jobDir = '';
   try {
+    // Verify system binaries are available (Vercel doesn't have them).
+    await assertSystemBinaries();
+
     const form = await req.formData();
 
     // Collect all PDF files (FormData supports multiple values per key).

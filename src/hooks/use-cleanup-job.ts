@@ -341,6 +341,8 @@ export function friendlyError(message: string | undefined, code?: string): strin
     return 'Only PDF files are supported.'
   if (code === 'TOO_MANY_PAGES' || m.includes('pages'))
     return 'This PDF has too many pages (max 1000). Try splitting it first.'
+  if (code === 'MISSING_BINARIES' || m.includes('system binaries'))
+    return 'This cleanup feature needs backend tools (Ghostscript, Tesseract, Poppler) that are not installed on this server. All other PDF tools work normally. Contact the site admin to enable this feature.'
   if (m.includes('ghostscript') || m.includes('qpdf'))
     return 'A required backend tool is unavailable. Please try again later.'
   return message || 'An unexpected error occurred.'

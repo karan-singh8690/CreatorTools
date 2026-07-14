@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { promises as fs } from 'fs';
-import { createJobDir, saveUpload, sanitizeFilename } from '@/lib/pdf-cleanup/utils';
+import { createJobDir, saveUpload, sanitizeFilename, assertSystemBinaries } from '@/lib/pdf-cleanup/utils';
 import { createJob, updateJob } from '@/lib/pdf-cleanup/job-store';
 import { runCleanup } from '@/lib/pdf-cleanup';
 import { CleanupOptions, CleanupMode, DEFAULT_OPTIONS } from '@/lib/pdf-cleanup/types';
@@ -71,6 +71,15 @@ export async function startCleanupJob(
   req: NextRequest,
   forceMode?: CleanupMode
 ): Promise<NextResponse> {
+  // Verify system binaries (gs, tesseract, poppler, qpdf) are installed.
+  // On Vercel they're not — return a clear message instead of ENOENT.
+  try {
+    await assertSystemBinaries();
+  } catch (e) {
+    const err = e as Error & { code?: string };
+    return NextResponse.json({ ok: false, error: err.message, code: err.code }, { status: 503 });
+  }
+
   let parsed: ParsedUpload;
   try {
     parsed = await parseCleanupForm(req);
