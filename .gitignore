@@ -52,3 +52,11 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Deployment: local database + uploaded files (must not be committed)
+db/*.db
+db/*.db-journal
+uploads/
+download/
+.env
+.env.local
+.env.production

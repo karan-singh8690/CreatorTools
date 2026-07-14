@@ -1,0 +1,26 @@
+# Render.com deployment config — https://render.com
+# After pushing the `deploy` branch to GitHub, connect this repo on Render
+# and Render will auto-detect this file.
+
+services:
+  - type: web
+    name: creatortools
+    runtime: docker
+    plan: starter  # 512 MB RAM, $7/mo — fine for this app
+    branch: deploy
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        value: file:/data/custom.db
+      - key: NEXT_PUBLIC_SITE_URL
+        # Set this to your Render URL after first deploy, then redeploy.
+        # e.g. https://creatortools.onrender.com
+        sync: false
+      - key: NODE_ENV
+        value: production
+    # Persistent disk so the SQLite database + uploaded files survive redeploy.
+    disk:
+      name: creatortools-data
+      mountPath: /data
+      sizeGB: 1

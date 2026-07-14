@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+db/*.db
+uploads
+download
+*.log
+dev.log
+.env
+.env.local
+README.md
+agent-ctx
+examples
+mini-services
+.zscripts
+skills
