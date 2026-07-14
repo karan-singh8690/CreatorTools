@@ -29,6 +29,7 @@ import {
   PenTool,
   Sparkles,
   Settings,
+  PlayCircle,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -57,6 +58,7 @@ const toolItems: ToolNavItem[] = [
   { id: 'crop', label: 'Crop Pages', icon: Crop, view: 'crop' },
   { id: 'sign', label: 'Sign Document', icon: PenTool, view: 'sign' },
   { id: 'cleanup', label: 'BG & Watermark Remover', icon: Sparkles, view: 'cleanup' },
+  { id: 'terabox-player', label: 'Terabox Player', icon: PlayCircle, view: 'terabox-player' },
   { id: 'security', label: 'Security', icon: Lock, view: 'security' },
   { id: 'convert', label: 'Convert PDF', icon: ArrowRightLeft, view: 'convert' },
   { id: 'ocr', label: 'OCR PDF', icon: ScanLine, view: 'ocr' },
@@ -78,6 +80,7 @@ function getActiveToolId(currentView: ViewType): string | null {
     crop: 'crop',
     sign: 'sign',
     cleanup: 'cleanup',
+    'terabox-player': 'terabox-player',
     security: 'security',
     convert: 'convert',
     ocr: 'ocr',

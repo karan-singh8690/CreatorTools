@@ -403,3 +403,39 @@ Stage Summary:
 - Combine & Clean workflow: drop 2+ PDFs → reorder → choose cleanup options (watermark removal, compression, PDF/A, scan cleanup, etc.) → one click merges AND cleans → download the combined+cleaned PDF.
 - All cleanup capabilities (watermark detection/removal, searchable text preservation, vector preservation, scan cleanup, smart compression, PDF/A-2b/3, progress reporting) now work on merged documents.
 - Files: src/app/api/cleanup/combine/route.ts (new), src/hooks/use-cleanup-job.ts (startCombineJob), src/components/pdf-element/cleanup-pdf.tsx (CombineView + tab + imports).
+
+---
+Task ID: 14
+Agent: main (Z.ai Code)
+Task: Add Terabox Player — stream Terabox videos via HLS without ads, no persistence.
+
+Work Log:
+- Extracted terabox-player-src.zip (15 files: standalone Next.js app with resolve/stream API routes, session store, hls.js player UI, custom CSS).
+- Installed hls.js@1.6.16 (the only new dependency; all other deps already in CreatorTools).
+- Copied backend verbatim (stateless, no DB):
+  - src/lib/terabox-session.ts — in-memory session store (cookie/referer) hung off globalThis to survive HMR; 10-min TTL, 100-entry cap. Shared between resolve + stream routes.
+  - src/app/api/terabox/resolve/route.ts — fetches the public Terabox share page server-side (like a browser), extracts surl/browserid/jsToken, calls /share/list for file metadata, builds the signed m3u8 URL (md5 sign = clienttype + channel + browserid + timestamp, clienttype=8 for full-video playback), probes available qualities (360p/480p/720p/1080p) in parallel. 5-min in-memory cache. Returns m3u8 URL + sessionToken + metadata + qualities. NO Terabox developer API, NO persistence.
+  - src/app/api/terabox/stream/route.ts — same-origin CORS proxy for the HLS playlist + .ts segments (browser can't fetch Terabox directly due to no CORS headers). Rewrites segment URLs in the m3u8 to route through the proxy. Forwards Range header for seek. Restricted to Terabox/CDN hosts (no open proxy). Fixed a syntax bug from the zip: `respHeaders] = v` → `respHeaders[h] = v`.
+- Copied public/style.css → public/terabox-style.css (renamed to avoid clobbering).
+- Created src/components/terabox/terabox-player.tsx — adapted the standalone page.tsx into a CreatorTools view component:
+  - Added 'use client', useAppStore import, X close button (calls setCurrentView('home')) matching the existing tool layout.
+  - Fixed 2 syntax bugs from the zip: `const [lsError, setHlsError]` → `const [hlsError, setHlsError]`; `andlePlay]` → `handlePlay]`.
+  - Fixed `(video as any)` → typed casts `(video as unknown as { _hls?: Hls })`.
+  - Loads /terabox-style.css + Font Awesome. Preserves the full player UI: URL input, Play button, hls.js video player, quality selector (preserves playback position on switch), preview warning, file info (title/size/duration/host), footer disclaimer.
+- Integrated into the app:
+  - app-store.tsx: added 'terabox-player' to ViewType union.
+  - page.tsx: imported TeraboxPlayer, added view case, added ?tool=terabox-player deep-link support, added PlayCircle icon import, added popularTools entry (indigo).
+  - app-sidebar.tsx: added "Terabox Player" nav item (PlayCircle icon) + active-state mapping.
+  - all-tools.tsx: added "Terabox Player" tool card (badge: New).
+- Verified:
+  - Lint: 0 errors.
+  - Agent Browser: /?tool=terabox-player renders the player (heading, close button, URL input, Play button, video placeholder) with zero console errors.
+  - Homepage: "Terabox Player · Stream Terabox videos" tile present in Popular Tools.
+  - Sidebar: "Terabox Player" nav item present.
+  - API: /api/terabox/resolve returns proper 400 errors for missing/invalid URLs; /api/terabox/stream returns 400 for missing `u` param. Both routes compile and run.
+
+Stage Summary:
+- Terabox Player is live — accessible via the sidebar "Terabox Player" item, the homepage Popular Tools tile, the All Tools page, or the deep link /?tool=terabox-player.
+- Stateless design: no Terabox developer API, no database, no disk persistence. Share URLs are resolved server-side (fetching the public share page like a browser), stream URLs are short-lived and held only in memory, sessions expire after 10 minutes.
+- Full HLS playback via hls.js with quality switching (360p/480p/720p/1080p), seek support (Range header passthrough), and a same-origin CORS proxy so the browser can load Terabox segments.
+- Files: src/lib/terabox-session.ts, src/app/api/terabox/{resolve,stream}/route.ts, public/terabox-style.css, src/components/terabox/terabox-player.tsx (new); src/store/app-store.ts, src/app/page.tsx, src/components/pdf-element/app-sidebar.tsx, src/components/pdf-element/all-tools.tsx (modified).

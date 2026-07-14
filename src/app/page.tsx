@@ -26,6 +26,7 @@ import { CropPdf } from '@/components/pdf-element/crop-pdf'
 import { SignPdf } from '@/components/pdf-element/sign-pdf'
 import { SettingsPage } from '@/components/pdf-element/settings-page'
 import { CleanupPdf } from '@/components/pdf-element/cleanup-pdf'
+import { TeraboxPlayer } from '@/components/terabox/terabox-player'
 import { motion } from 'framer-motion'
 
 import {
@@ -49,6 +50,7 @@ import {
   Crop,
   Hash,
   Heading,
+  PlayCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -68,6 +70,7 @@ const popularTools = [
   { id: 'header-footer', label: 'Header/Footer', desc: 'Add headers', icon: Heading, color: 'text-cyan-600', bg: 'bg-cyan-50', ring: 'ring-cyan-500/20', view: 'header-footer' as ViewType },
   { id: 'bates', label: 'Bates Number', desc: 'Page numbering', icon: Hash, color: 'text-slate-600', bg: 'bg-slate-50', ring: 'ring-slate-500/20', view: 'bates-number' as ViewType },
   { id: 'cleanup', label: 'PDF Cleanup', desc: 'Remove watermarks', icon: Sparkles, color: 'text-rose-600', bg: 'bg-rose-50', ring: 'ring-rose-500/20', view: 'cleanup' as ViewType },
+  { id: 'terabox', label: 'Terabox Player', desc: 'Stream Terabox videos', icon: PlayCircle, color: 'text-indigo-600', bg: 'bg-indigo-50', ring: 'ring-indigo-500/20', view: 'terabox-player' as ViewType },
 ]
 
 const fadeUp = {
@@ -246,7 +249,7 @@ function HomeContent() {
         'home', 'all-tools', 'pdf-viewer', 'combine-files', 'batch-print',
         'convert', 'ocr', 'compress', 'qr-generator', 'extract-text',
         'watermark', 'security', 'header-footer', 'bates-number',
-        'background', 'crop', 'sign', 'cleanup', 'settings',
+        'background', 'crop', 'sign', 'cleanup', 'terabox-player', 'settings',
       ]
       if (validViews.includes(tool as ViewType)) {
         setCurrentView(tool as ViewType)
@@ -290,6 +293,8 @@ function HomeContent() {
         return <SignPdf />
       case 'cleanup':
         return <CleanupPdf />
+      case 'terabox-player':
+        return <TeraboxPlayer />
       case 'settings':
         return <SettingsPage />
       case 'qr-generator':

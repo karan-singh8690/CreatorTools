@@ -19,6 +19,7 @@ import {
   PenTool,
   Crop,
   Sparkles,
+  PlayCircle,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,7 @@ const allTools: ToolItem[] = [
   { id: 'sign', label: 'Sign Document', description: 'Sign PDF documents digitally.', icon: PenTool, badge: 'New', view: 'sign' },
   { id: 'crop', label: 'Crop', description: 'Crop PDF pages with visual editor.', icon: Crop, badge: 'New', view: 'crop' },
   { id: 'cleanup', label: 'Background & Watermark Remover', description: 'Remove watermarks, backgrounds & clean scanned pages.', icon: Sparkles, badge: 'New', view: 'cleanup' },
+  { id: 'terabox-player', label: 'Terabox Player', description: 'Stream Terabox videos instantly without ads.', icon: PlayCircle, badge: 'New', view: 'terabox-player' },
 ]
 
 export function AllTools() {
